@@ -287,6 +287,9 @@
             padding: 14px 16px 16px;
             margin-top: 16px;
         }
+        .collapsible-wrap.collapsed { display: none; }
+        #indicatorsWrap:not(.collapsed) { margin-top: 14px; }
+        .indicators-section { margin-top: 24px; }
         .alert-setter-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
         .alert-kind-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
         .breakout-alert-hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
@@ -766,7 +769,6 @@
             display: grid;
             grid-template-columns: 160px 160px 1fr;
             gap: 16px;
-            margin-top: 24px;
         }
         .indicator-box {
             background: var(--input-bg);
@@ -1230,34 +1232,42 @@
                     <div class="levels-legend">* = ค่าประมาณการ ยังไม่เคยเกิดขึ้นจริง</div>
 
                     <div class="alert-setter">
-                        <div class="alert-setter-title">🔔 ตั้งแจ้งเตือน</div>
-
-                        <div class="alert-kind-tabs">
-                            <button type="button" class="alert-kind-btn active" id="kindBtnPrice" onclick="setAlertKind('price')">ราคา</button>
-                            <button type="button" class="alert-kind-btn" id="kindBtnSignal" onclick="setAlertKind('signal')">เปลี่ยนสัญญาณ</button>
-                            <button type="button" class="alert-kind-btn" id="kindBtnBreakout" onclick="setAlertKind('breakout')">ทะลุแนวรับ/ต้าน</button>
+                        <div class="news-section-header" role="button" tabindex="0" id="alertSetterHeader"
+                            aria-expanded="false" aria-controls="alertSetterWrap" aria-label="ย่อ/ขยายกล่องตั้งแจ้งเตือน"
+                            onclick="toggleAlertSetterSection()"
+                            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleAlertSetterSection();}">
+                            <span class="news-section-title">🔔 ตั้งแจ้งเตือน</span>
+                            <span id="alertSetterToggleIcon" class="news-toggle-icon">▼</span>
                         </div>
 
-                        <div id="priceAlertFields" class="alert-setter-row">
-                            <select id="alertCondition" aria-label="เงื่อนไขราคา">
-                                <option value="below">ต่ำกว่า</option>
-                                <option value="above">สูงกว่า</option>
-                            </select>
-                            <input type="number" id="alertPriceInput" placeholder="ราคา ($)" aria-label="ราคาที่ต้องการให้แจ้งเตือน">
-                        </div>
+                        <div id="alertSetterWrap" class="collapsible-wrap collapsed">
+                            <div class="alert-kind-tabs">
+                                <button type="button" class="alert-kind-btn active" id="kindBtnPrice" onclick="setAlertKind('price')">ราคา</button>
+                                <button type="button" class="alert-kind-btn" id="kindBtnSignal" onclick="setAlertKind('signal')">เปลี่ยนสัญญาณ</button>
+                                <button type="button" class="alert-kind-btn" id="kindBtnBreakout" onclick="setAlertKind('breakout')">ทะลุแนวรับ/ต้าน</button>
+                            </div>
 
-                        <div id="signalAlertFields" class="alert-setter-row" style="display:none;">
-                            <select id="alertTargetSignal" aria-label="สัญญาณเป้าหมาย">
-                                <option value="BUY">เมื่อเปลี่ยนเป็น BUY</option>
-                                <option value="HOLD">เมื่อเปลี่ยนเป็น HOLD</option>
-                            </select>
-                        </div>
+                            <div id="priceAlertFields" class="alert-setter-row">
+                                <select id="alertCondition" aria-label="เงื่อนไขราคา">
+                                    <option value="below">ต่ำกว่า</option>
+                                    <option value="above">สูงกว่า</option>
+                                </select>
+                                <input type="number" id="alertPriceInput" placeholder="ราคา ($)" aria-label="ราคาที่ต้องการให้แจ้งเตือน">
+                            </div>
 
-                        <div id="breakoutAlertFields" class="alert-setter-row" style="display:none;">
-                            <span class="breakout-alert-hint">แจ้งเตือนอัตโนมัติเมื่อราคาหุ้นตัวนี้ทะลุแนวต้าน หรือหลุดแนวรับสำคัญ ไม่ต้องกรอกราคาเอง</span>
-                        </div>
+                            <div id="signalAlertFields" class="alert-setter-row" style="display:none;">
+                                <select id="alertTargetSignal" aria-label="สัญญาณเป้าหมาย">
+                                    <option value="BUY">เมื่อเปลี่ยนเป็น BUY</option>
+                                    <option value="HOLD">เมื่อเปลี่ยนเป็น HOLD</option>
+                                </select>
+                            </div>
 
-                        <button class="btn-set-alert btn-set-alert-full" onclick="createAlert()">ตั้งเตือน</button>
+                            <div id="breakoutAlertFields" class="alert-setter-row" style="display:none;">
+                                <span class="breakout-alert-hint">แจ้งเตือนอัตโนมัติเมื่อราคาหุ้นตัวนี้ทะลุแนวต้าน หรือหลุดแนวรับสำคัญ ไม่ต้องกรอกราคาเอง</span>
+                            </div>
+
+                            <button class="btn-set-alert btn-set-alert-full" onclick="createAlert()">ตั้งเตือน</button>
+                        </div>
                     </div>
                 </div>
 
@@ -1268,20 +1278,31 @@
                 </div>
             </div>
 
-            <div class="indicators-row">
-                <div class="indicator-box">
-                    <div class="indicator-label">RSI (14)</div>
-                    <div id="rsiValue" class="indicator-value">-</div>
-                    <div id="rsiZone" class="indicator-zone">-</div>
+            <div class="indicators-section">
+                <div class="news-section-header" role="button" tabindex="0" id="indicatorsSectionHeader"
+                    aria-expanded="false" aria-controls="indicatorsWrap" aria-label="ย่อ/ขยายตัวชี้วัดเทคนิคคอล RSI และ MACD"
+                    onclick="toggleIndicatorsSection()"
+                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleIndicatorsSection();}">
+                    <span class="news-section-title">📊 ตัวชี้วัดเทคนิคคอล (RSI / MACD)</span>
+                    <span id="indicatorsToggleIcon" class="news-toggle-icon">▼</span>
                 </div>
-                <div class="indicator-box">
-                    <div class="indicator-label">MACD</div>
-                    <div id="macdValue" class="indicator-value">-</div>
-                    <div id="macdCross" class="indicator-zone">-</div>
-                </div>
-                <div class="indicator-chart-wrap">
-                    <div class="chart-container macd-chart-container">
-                        <canvas id="macdChart"></canvas>
+                <div id="indicatorsWrap" class="collapsible-wrap collapsed">
+                    <div class="indicators-row">
+                        <div class="indicator-box">
+                            <div class="indicator-label">RSI (14)</div>
+                            <div id="rsiValue" class="indicator-value">-</div>
+                            <div id="rsiZone" class="indicator-zone">-</div>
+                        </div>
+                        <div class="indicator-box">
+                            <div class="indicator-label">MACD</div>
+                            <div id="macdValue" class="indicator-value">-</div>
+                            <div id="macdCross" class="indicator-zone">-</div>
+                        </div>
+                        <div class="indicator-chart-wrap">
+                            <div class="chart-container macd-chart-container">
+                                <canvas id="macdChart"></canvas>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1947,6 +1968,32 @@
             newsCollapsed = !newsCollapsed;
             localStorage.setItem('newsCollapsed', newsCollapsed);
             applyNewsCollapsedState();
+        }
+
+        // ปิดไว้เป็นค่าเริ่มต้นเสมอ (ไม่ persist) เพื่อลดความยาวหน้าจอเวลาเปิดดูหุ้นแต่ละตัว
+        // โดยเฉพาะบนมือถือที่ไม่มีคอลัมน์ซ้าย-ขวาช่วยแบ่งพื้นที่เหมือนจอคอม
+        function toggleIndicatorsSection() {
+            const wrap = document.getElementById('indicatorsWrap');
+            const icon = document.getElementById('indicatorsToggleIcon');
+            const header = document.getElementById('indicatorsSectionHeader');
+            const nowCollapsed = !wrap.classList.contains('collapsed');
+            wrap.classList.toggle('collapsed', nowCollapsed);
+            icon.innerText = nowCollapsed ? '▼' : '▲';
+            header.setAttribute('aria-expanded', String(!nowCollapsed));
+            // เผื่อ Chart.js คำนวณขนาดผิดตอนเพิ่งเปิดออกมาจาก display:none
+            if (!nowCollapsed && macdChartInstance) {
+                setTimeout(() => macdChartInstance.resize(), 50);
+            }
+        }
+
+        function toggleAlertSetterSection() {
+            const wrap = document.getElementById('alertSetterWrap');
+            const icon = document.getElementById('alertSetterToggleIcon');
+            const header = document.getElementById('alertSetterHeader');
+            const nowCollapsed = !wrap.classList.contains('collapsed');
+            wrap.classList.toggle('collapsed', nowCollapsed);
+            icon.innerText = nowCollapsed ? '▼' : '▲';
+            header.setAttribute('aria-expanded', String(!nowCollapsed));
         }
 
         async function fetchStockNews(ticker) {
