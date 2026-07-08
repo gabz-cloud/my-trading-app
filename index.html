@@ -1,0 +1,2897 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TICKR | ระบบวิเคราะห์และคัดกรองหุ้น</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root[data-theme="dark"] {
+            --bg-color: #0A0E17;
+            --container-bg: #131A2E;
+            --text-color: #EDEFF6;
+            --text-muted: #8891AC;
+            --input-bg: #1B2340;
+            --border-color: #262F4A;
+            --chart-grid: #232B45;
+            --theme-btn-bg: #E8B34C;
+            --theme-btn-text: #241A05;
+            --tab-active-color: #E8B34C;
+            --scrollbar-thumb: #333B58;
+            --scrollbar-track: #0A0E17;
+            --accent-gold: #E8B34C;
+            --accent-teal: #4FD1C5;
+            --up-color: #3ADC8F;
+            --down-color: #FF5C6C;
+            --hold-color: #7C9BFF;
+            --radius-lg: 16px;
+            --shadow-card: 0 8px 30px rgba(0,0,0,0.35);
+        }
+        :root[data-theme="light"] {
+            --bg-color: #F3F5FA;
+            --container-bg: #FFFFFF;
+            --text-color: #12162A;
+            --text-muted: #626A85;
+            --input-bg: #F0F2F8;
+            --border-color: #E1E4EE;
+            --chart-grid: #E9EBF3;
+            --theme-btn-bg: #12162A;
+            --theme-btn-text: #FFFFFF;
+            --tab-active-color: #B8842E;
+            --scrollbar-thumb: #C7CCDC;
+            --scrollbar-track: #F3F5FA;
+            --accent-gold: #B8842E;
+            --accent-teal: #1D9C90;
+            --up-color: #1E9E5A;
+            --down-color: #E23C4B;
+            --hold-color: #3E5FCB;
+            --radius-lg: 16px;
+            --shadow-card: 0 8px 24px rgba(20,25,50,0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Inter', -apple-system, Segoe UI, sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+        ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 8px; }
+
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* ===== Top bar ===== */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 60;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 32px;
+            background: var(--container-bg);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark {
+            width: 38px; height: 38px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent-gold), var(--accent-teal));
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+        .brand-name {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 20px;
+            letter-spacing: 0.5px;
+        }
+        .brand-tagline { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+
+        .theme-toggle-btn {
+            background-color: var(--theme-btn-bg);
+            color: var(--theme-btn-text);
+            border: none;
+            padding: 9px 18px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 13px;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .theme-toggle-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,0.25); }
+
+        .topbar-actions { display: flex; align-items: center; gap: 14px; }
+
+        .market-status-badge {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 12px;
+            border-radius: 20px;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+        .market-status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-muted);
+            flex-shrink: 0;
+        }
+        .market-status-dot.open { background-color: var(--up-color); box-shadow: 0 0 6px var(--up-color); }
+        .market-status-dot.closed { background-color: var(--down-color); }
+
+        .digest-reopen-btn {
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            font-size: 15px;
+            padding: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .digest-reopen-btn:hover { border-color: var(--accent-teal); }
+
+        .alert-bell-wrap { position: relative; }
+        .alert-bell-btn {
+            position: relative;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            font-size: 17px;
+            padding: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .alert-bell-btn:hover { border-color: var(--accent-teal); }
+        .alert-badge {
+            position: absolute;
+            top: -4px; right: -4px;
+            min-width: 18px; height: 18px;
+            padding: 0 4px;
+            background-color: var(--down-color);
+            color: #fff;
+            font-size: 10.5px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            border-radius: 20px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .alert-panel {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 300px;
+            max-height: 360px;
+            overflow-y: auto;
+            background-color: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: var(--shadow-card);
+            z-index: 80;
+        }
+        .alert-panel-header {
+            padding: 14px 16px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 14px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .alert-panel-tabs {
+            display: flex;
+            gap: 4px;
+            padding: 8px 10px 0;
+        }
+        .alert-panel-tab {
+            flex: 1;
+            padding: 7px 0;
+            border-radius: 8px 8px 0 0;
+            background: none;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 700;
+            border-bottom: 2px solid transparent;
+        }
+        .alert-panel-tab.active { color: var(--text-color); border-bottom-color: var(--accent-teal); }
+        .alert-list { padding: 6px; }
+        .alert-empty { padding: 20px 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
+        .alert-list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 10px;
+            border-radius: 8px;
+        }
+        .alert-list-item:hover { background-color: var(--input-bg); }
+        .alert-ticker { font-weight: 700; margin-right: 8px; }
+        .alert-condition { font-size: 12.5px; color: var(--text-muted); }
+        .alert-remove-btn {
+            background: none; border: none; padding: 4px;
+            color: var(--text-muted); font-size: 14px; opacity: 0.6;
+        }
+        .alert-remove-btn:hover { opacity: 1; color: var(--down-color); }
+
+        .alert-history-item {
+            padding: 10px 10px;
+            border-radius: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .alert-history-item:last-child { border-bottom: none; }
+        .alert-history-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+        .alert-history-time { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .alert-history-msg { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+        .history-action-row {
+            display: flex;
+            gap: 8px;
+            margin: 6px 10px 10px;
+        }
+        .clear-history-btn {
+            flex: 1;
+            padding: 8px 0;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .clear-history-btn:hover { color: var(--down-color); border-color: var(--down-color); }
+
+        .btn-export-csv-inline {
+            flex: 1;
+            padding: 8px 0;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .btn-export-csv-inline:hover { color: var(--accent-teal); border-color: var(--accent-teal); }
+
+        .btn-export-csv {
+            padding: 10px 16px;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-color);
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .btn-export-csv:hover { border-color: var(--accent-teal); color: var(--accent-teal); }
+
+        .alert-setter {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 16px 16px;
+            margin-top: 16px;
+        }
+        .alert-setter-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+        .alert-kind-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+        .breakout-alert-hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+        .alert-kind-btn {
+            flex: 1;
+            padding: 7px 0;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--container-bg);
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .alert-kind-btn.active { background-color: var(--accent-teal); color: #06231F; border-color: var(--accent-teal); }
+        .alert-setter-row { display: flex; gap: 8px; margin-bottom: 10px; }
+        .alert-setter-row select {
+            padding: 9px 8px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--container-bg);
+            color: var(--text-color);
+            font-size: 13px;
+        }
+        #signalAlertFields select { flex: 1; }
+        .alert-setter-row input {
+            flex: 1;
+            min-width: 0;
+            padding: 9px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--container-bg);
+            color: var(--text-color);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+        .btn-set-alert {
+            padding: 9px 14px;
+            background-color: var(--accent-gold);
+            color: #2B1C04;
+            border-radius: 8px;
+            font-size: 12.5px;
+        }
+        .btn-set-alert-full { width: 100%; }
+
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 200;
+            max-width: 340px;
+        }
+        .toast {
+            padding: 14px 16px;
+            border-radius: 10px;
+            background-color: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--accent-teal);
+            box-shadow: var(--shadow-card);
+            font-size: 13.5px;
+            color: var(--text-color);
+            animation: toastIn 0.25s ease-out;
+        }
+        .toast-alert { border-left-color: var(--down-color); }
+        .toast-hide { animation: toastOut 0.5s ease-in forwards; }
+        .toast-actions { margin-top: 8px; }
+        .toast-action-btn {
+            padding: 6px 12px;
+            background-color: var(--accent-teal);
+            color: #06231F;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes toastOut { to { opacity: 0; transform: translateX(20px); } }
+
+        /* ===== Ticker tape ===== */
+        .ticker-tape-wrap {
+            width: 100%;
+            overflow: hidden;
+            background: var(--input-bg);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .ticker-tape {
+            display: flex;
+            width: max-content;
+            white-space: nowrap;
+            padding: 9px 0;
+            animation: tickerScroll 45s linear infinite;
+        }
+        .ticker-tape:hover { animation-play-state: paused; }
+        @keyframes tickerScroll {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+        }
+        .ticker-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12.5px;
+            padding: 0 22px;
+            border-right: 1px solid var(--border-color);
+        }
+        .ticker-item .sym { font-weight: 700; color: var(--text-color); }
+        .ticker-item .px { color: var(--text-muted); }
+        .ticker-item .chg.buy { color: var(--up-color); }
+        .ticker-item .chg.hold { color: var(--hold-color); }
+
+        /* ===== Page layout ===== */
+        .page {
+            max-width: 1320px;
+            margin: 0 auto;
+            padding: 32px 28px 70px;
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+        }
+
+        .card {
+            background-color: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-card);
+            padding: 28px;
+        }
+
+        /* ===== Hero / search ===== */
+        .hero { position: relative; overflow: hidden; }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -70px; right: -70px;
+            width: 260px; height: 260px;
+            background: radial-gradient(circle, var(--accent-gold) 0%, transparent 70%);
+            opacity: 0.16;
+            filter: blur(6px);
+            pointer-events: none;
+        }
+        .hero h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 26px;
+            font-weight: 700;
+            margin: 0;
+            position: relative;
+        }
+        .hero .subtitle {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin: 8px 0 0;
+            position: relative;
+        }
+
+        /* ===== Daily Digest ===== */
+        .daily-digest-card { padding: 22px 26px; }
+        .digest-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+        .digest-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 15.5px;
+        }
+        .digest-close-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 15px;
+            padding: 4px;
+            opacity: 0.7;
+        }
+        .digest-close-btn:hover { opacity: 1; color: var(--down-color); }
+        .digest-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+        }
+        .digest-stat {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 16px;
+            text-align: center;
+        }
+        .digest-stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+        .digest-stat-label {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            font-weight: 600;
+        }
+        .digest-fav-section {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+        .digest-fav-title { font-size: 12.5px; color: var(--text-muted); font-weight: 600; margin-bottom: 10px; }
+        .digest-fav-list { display: flex; flex-wrap: wrap; gap: 8px; }
+        .digest-fav-chip {
+            padding: 6px 12px;
+            background: rgba(58, 214, 143, 0.12);
+            color: var(--up-color);
+            border: 1px solid rgba(58, 214, 143, 0.3);
+            border-radius: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .digest-fav-chip:hover { transform: translateY(-1px); }
+
+        .search-bar-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            margin-top: 22px;
+            flex-wrap: wrap;
+            position: relative;
+        }
+
+        .input-wrap { position: relative; flex: 1 1 240px; min-width: 220px; }
+        .input-wrap .input-icon {
+            position: absolute; left: 14px; top: 50%;
+            transform: translateY(-50%);
+            opacity: 0.45; font-size: 14px; pointer-events: none;
+        }
+
+        input#tickerInput {
+            width: 100%;
+            padding: 12px 14px 12px 38px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            font-size: 15px;
+        }
+        input#tickerInput:focus { outline: none; border-color: var(--accent-teal); }
+        input#tickerInput::placeholder { color: var(--text-muted); }
+
+        select.screener-mode-select {
+            padding: 12px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none;
+            min-width: 190px;
+        }
+
+        .recently-viewed-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        .recently-viewed-row:empty { margin-top: 0; }
+        .rv-label {
+            font-size: 12.5px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-right: 2px;
+        }
+        .rv-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px 6px 12px;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text-color);
+            cursor: pointer;
+            transition: border-color 0.15s, transform 0.15s;
+        }
+        .rv-chip:hover { border-color: var(--accent-teal); transform: translateY(-1px); }
+        .rv-chip .rv-remove {
+            font-family: 'Inter', sans-serif;
+            font-weight: 400;
+            color: var(--text-muted);
+            opacity: 0.6;
+            padding: 0 2px;
+        }
+        .rv-chip .rv-remove:hover { opacity: 1; color: var(--down-color); }
+
+        button {
+            padding: 12px 18px;
+            border-radius: 10px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 700;
+            white-space: nowrap;
+            font-family: 'Inter', sans-serif;
+            transition: transform 0.15s, filter 0.15s;
+        }
+        button:hover { transform: translateY(-1px); }
+        .btn-search { background-color: var(--accent-teal); color: #06231F; }
+        .btn-screener { background-color: var(--accent-gold); color: #2B1C04; }
+
+        /* ===== Stock detail ===== */
+        .result-box { display: none; }
+        .stock-detail {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 32px;
+            align-items: stretch;
+        }
+        .detail-left { display: flex; flex-direction: column; }
+        .detail-right { display: flex; flex-direction: column; }
+
+        .stock-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .logo-container {
+            width: 50px; height: 50px;
+            border-radius: 10px;
+            background-color: #ffffff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            padding: 4px;
+            flex-shrink: 0;
+        }
+        .logo-container img { width: 100%; height: 100%; object-fit: contain; }
+
+        #stockTicker {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 24px;
+            letter-spacing: 0.5px;
+            margin: 0;
+        }
+
+        .btn-fav-star {
+            font-size: 26px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            color: var(--text-muted);
+            transition: transform 0.2s, color 0.2s;
+            margin-left: auto;
+        }
+        .btn-fav-star.active { color: var(--accent-gold); transform: scale(1.15); }
+        .btn-fav-star:hover { transform: scale(1.2); }
+
+        .price {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 40px;
+            font-weight: 700;
+            margin: 16px 0 8px;
+        }
+        .signal {
+            display: inline-flex;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 13px;
+            margin-bottom: 12px;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+        }
+
+        .combo-signal-badge {
+            display: inline-flex;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.4;
+            margin-bottom: 20px;
+            border: 1px solid transparent;
+            max-width: 100%;
+        }
+        .combo-signal-badge.strong-buy {
+            background-color: rgba(232, 179, 76, 0.15);
+            color: var(--accent-gold);
+            border-color: rgba(232, 179, 76, 0.35);
+        }
+        .combo-signal-badge.caution {
+            background-color: rgba(255, 92, 108, 0.12);
+            color: var(--down-color);
+            border-color: rgba(255, 92, 108, 0.3);
+        }
+
+        .tf-bar { display: flex; gap: 8px; margin-bottom: 22px; }
+        .btn-tf {
+            flex: 1;
+            padding: 9px 0;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 13px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            border-radius: 8px;
+        }
+        .btn-tf:hover { color: var(--text-color); border-color: var(--accent-teal); }
+        .btn-tf.active { background-color: var(--accent-teal); color: #06231F; border-color: var(--accent-teal); }
+
+        .levels {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 6px 18px;
+            margin-top: auto;
+        }
+        .level-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 13px 0;
+        }
+        .level-row + .level-row { border-top: 1px solid var(--border-color); }
+        .level-label { color: var(--text-muted); font-size: 13.5px; }
+        .level-value { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 15px; }
+        .level-estimated { opacity: 0.55; cursor: help; font-weight: 500; }
+        .levels-legend { font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: right; }
+        .level-value.up { color: var(--up-color); }
+        .level-value.down { color: var(--down-color); }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            flex: 1;
+            min-height: 380px;
+            background-color: var(--bg-color);
+            padding: 14px;
+            border-radius: 12px;
+        }
+
+        /* ===== Auto-refresh ===== */
+        .auto-refresh-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 22px;
+            font-size: 12.5px;
+        }
+        .auto-refresh-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .auto-refresh-toggle input { cursor: pointer; accent-color: var(--accent-teal); }
+        .last-updated-label { color: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+
+        /* ===== Indicators (RSI / MACD) ===== */
+        .indicators-row {
+            display: grid;
+            grid-template-columns: 160px 160px 1fr;
+            gap: 16px;
+            margin-top: 24px;
+        }
+        .indicator-box {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 16px;
+        }
+        .indicator-label { font-size: 11.5px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+        .indicator-value { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; margin-top: 6px; }
+        .indicator-zone { font-size: 12px; font-weight: 600; margin-top: 4px; }
+        .indicator-zone.zone-buy, .indicator-zone.zone-oversold { color: var(--up-color); }
+        .indicator-zone.zone-sell, .indicator-zone.zone-overbought { color: var(--down-color); }
+        .indicator-zone.zone-neutral { color: var(--text-muted); }
+        .indicator-chart-wrap { min-width: 0; }
+        .macd-chart-container { min-height: 0; height: 100%; padding: 8px; }
+
+        /* ===== News ===== */
+        .news-section { margin-top: 24px; }
+        .news-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            margin-bottom: 12px;
+        }
+        .news-section-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; }
+        .news-toggle-icon { color: var(--text-muted); font-size: 12px; transition: transform 0.2s; }
+        .news-list-wrap {
+            max-height: 420px;
+            overflow-y: auto;
+            transition: max-height 0.25s ease, opacity 0.2s ease;
+            scrollbar-width: thin;
+        }
+        .news-list-wrap.collapsed { max-height: 0; overflow: hidden; opacity: 0; }
+        .news-list { display: flex; flex-direction: column; gap: 8px; }
+        .news-empty { color: var(--text-muted); font-size: 13.5px; padding: 14px 0; }
+        .news-item {
+            display: block;
+            padding: 12px 14px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            text-decoration: none;
+            color: var(--text-color);
+            transition: border-color 0.15s;
+        }
+        .news-item:hover { border-color: var(--accent-teal); }
+        .news-item-title { font-size: 13.5px; font-weight: 600; line-height: 1.4; }
+        .news-sentiment-badge { margin-right: 2px; cursor: help; }
+        .news-item-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; }
+
+        /* ===== Compare mode ===== */
+        .col-compare { width: 35px; text-align: center; }
+        .compare-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 18px;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 30px;
+            box-shadow: var(--shadow-card);
+            z-index: 90;
+            font-size: 13.5px;
+            font-weight: 600;
+        }
+        .compare-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+        .compare-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; }
+        .compare-table-wrap { max-height: 260px; margin-bottom: 20px; }
+        .compare-chart-container { min-height: 320px; }
+
+        /* ===== Screener ===== */
+        #screenerWrapper { position: relative; }
+
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(10, 14, 23, 0.72);
+            backdrop-filter: blur(6px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            z-index: 100;
+            border-radius: var(--radius-lg);
+            color: var(--accent-gold);
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .spinner {
+            width: 32px; height: 32px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-gold);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .market-tabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 18px;
+        }
+        .tab-item {
+            padding: 12px 20px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            text-align: center;
+            transition: 0.2s;
+            border-bottom: 3px solid transparent;
+            border-radius: 8px 8px 0 0;
+            margin-bottom: -1px;
+        }
+        .tab-item:hover { color: var(--text-color); background: var(--input-bg); }
+        .tab-item.active {
+            color: var(--text-color);
+            border-bottom-color: var(--tab-active-color);
+        }
+
+        .table-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .toolbar-search { flex: 1 1 220px; min-width: 180px; }
+        .toolbar-search input {
+            width: 100%;
+            padding: 10px 12px 10px 36px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            font-size: 13.5px;
+        }
+        .toolbar-search input::placeholder { color: var(--text-muted); }
+        .toolbar-num {
+            width: 130px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            font-size: 13.5px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .toolbar-num::placeholder { color: var(--text-muted); font-family: 'Inter', sans-serif; }
+        .btn-reset-filter {
+            padding: 10px 16px;
+            border-radius: 8px;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .btn-reset-filter:hover { color: var(--text-color); border-color: var(--accent-teal); }
+
+        th.sortable { cursor: pointer; user-select: none; }
+        th.sortable:hover { color: var(--text-color); }
+        .sort-icon { font-size: 9px; margin-left: 4px; opacity: 0.8; display: inline-block; min-width: 8px; }
+
+        .table-scroll-container {
+            max-height: 560px;
+            overflow-y: auto;
+            overflow-x: auto;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            scrollbar-width: thin;
+        }
+
+        table { width: 100%; border-collapse: collapse; min-width: 620px; }
+
+        th {
+            position: sticky;
+            top: 0;
+            background-color: var(--input-bg);
+            color: var(--text-muted);
+            z-index: 10;
+            padding: 14px 12px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+
+        td { padding: 13px 12px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 14.5px; }
+
+        .clickable-row { cursor: pointer; transition: background-color 0.15s; }
+        .clickable-row:hover { background-color: var(--input-bg); }
+
+        .cell-mono { font-family: 'JetBrains Mono', monospace; }
+
+        .badge-buy { background-color: rgba(58,214,143,0.15); color: var(--up-color); padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; }
+        .badge-hold { background-color: rgba(124,155,255,0.15); color: var(--hold-color); padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; }
+        .badge-fav { background-color: rgba(232,179,76,0.15); color: var(--accent-gold); padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; }
+
+        .table-logo-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 7px;
+            background-color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 2px;
+        }
+        .table-logo-box img { width: 100%; height: 100%; object-fit: contain; }
+
+        .col-star { width: 35px; text-align: center; font-size: 18px; cursor: pointer; }
+        .col-no { width: 45px; text-align: center; color: var(--text-muted); font-weight: 700; }
+        th.col-no, th.col-star { text-align: center; }
+
+        .btn-table-star {
+            background: none; border: none; font-size: 19px; cursor: pointer;
+            color: var(--accent-gold); padding: 0; transition: transform 0.15s;
+        }
+        .btn-table-star:hover { transform: scale(1.2); }
+
+        .btn-table-unstar {
+            background: none; border: none; font-size: 17px; cursor: pointer;
+            color: var(--text-muted); padding: 0; opacity: 0.5; transition: 0.15s;
+        }
+        .btn-table-unstar:hover { opacity: 1; color: var(--accent-gold); transform: scale(1.2); }
+
+        @media (max-width: 900px) {
+            .topbar { padding: 12px 18px; }
+            .page { padding: 22px 16px 50px; }
+            .card { padding: 20px; }
+            .stock-detail { grid-template-columns: 1fr; }
+            .search-bar-row { flex-direction: column; align-items: stretch; }
+            select.screener-mode-select { min-width: 0; }
+            .table-toolbar { flex-direction: column; align-items: stretch; }
+            .toolbar-num { width: 100%; }
+            .indicators-row { grid-template-columns: 1fr; }
+            .compare-bar { flex-wrap: wrap; justify-content: center; width: 90%; }
+            .digest-stats { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="topbar">
+        <div class="brand">
+            <div class="brand-mark">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <line x1="4" y1="2" x2="4" y2="18" stroke="#fff" stroke-width="1.4"/>
+                    <rect x="2" y="6" width="4" height="6" fill="#fff"/>
+                    <line x1="10" y1="0" x2="10" y2="20" stroke="#fff" stroke-width="1.4"/>
+                    <rect x="8" y="9" width="4" height="7" fill="#fff"/>
+                    <line x1="16" y1="3" x2="16" y2="16" stroke="#fff" stroke-width="1.4"/>
+                    <rect x="14" y="4" width="4" height="5" fill="#fff"/>
+                </svg>
+            </div>
+            <div class="brand-text">
+                <span class="brand-name">TICKR</span>
+                <span class="brand-tagline">วิเคราะห์ &amp; คัดกรองหุ้นอัจฉริยะ</span>
+            </div>
+        </div>
+        <div class="topbar-actions">
+            <button class="digest-reopen-btn" onclick="renderDailyDigest(true)" aria-label="เปิดดูสรุปประจำวัน" title="ดูสรุปประจำวัน">📋</button>
+            <div id="marketStatusBadge" class="market-status-badge" title="อ้างอิงเวลาทำการปกติของตลาดหุ้นสหรัฐฯ (NYSE/Nasdaq) ไม่รวมวันหยุดพิเศษ">
+                <span class="market-status-dot"></span>
+                <span id="marketStatusText">กำลังเช็คสถานะตลาด...</span>
+            </div>
+            <div class="alert-bell-wrap">
+                <button class="alert-bell-btn" id="alertBellBtn" onclick="toggleAlertPanel(event)" aria-label="เปิดดูรายการแจ้งเตือนราคาและสัญญาณ" aria-haspopup="true">
+                    🔔
+                    <span id="alertBadge" class="alert-badge" style="display:none;">0</span>
+                </button>
+                <div id="alertPanel" class="alert-panel" style="display:none;">
+                    <div class="alert-panel-header">🔔 การแจ้งเตือน</div>
+                    <div class="alert-panel-tabs">
+                        <button type="button" class="alert-panel-tab active" id="apTabActive" onclick="switchAlertPanelTab('active')">ที่ตั้งไว้</button>
+                        <button type="button" class="alert-panel-tab" id="apTabHistory" onclick="switchAlertPanelTab('history')">ประวัติ</button>
+                    </div>
+                    <div id="alertList" class="alert-list"></div>
+                    <div id="historyActionRow" class="history-action-row" style="display:none;">
+                        <button type="button" class="btn-export-csv-inline" onclick="exportAlertHistoryCsv()">📥 Export CSV</button>
+                        <button type="button" id="clearHistoryBtn" class="clear-history-btn" onclick="clearAlertHistory()">ล้างประวัติทั้งหมด</button>
+                    </div>
+                </div>
+            </div>
+            <button class="theme-toggle-btn" onclick="toggleTheme()" id="themeBtn">☀️ Light Mode</button>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container"></div>
+
+    <div class="ticker-tape-wrap">
+        <div class="ticker-tape" id="tickerTape">
+            <div class="ticker-item"><span class="px">กำลังโหลดข้อมูลตลาด...</span></div>
+        </div>
+    </div>
+
+    <div class="page">
+
+        <section class="hero card">
+            <h1>ระบบวิเคราะห์และคัดกรองหุ้น</h1>
+            <p class="subtitle">ค้นหาหุ้นรายตัว ดูแนวรับแนวต้าน หรือสแกนสัญญาณซื้อขายทั่วตลาดได้ในที่เดียว</p>
+
+            <div class="search-bar-row">
+                <div class="input-wrap">
+                    <span class="input-icon">🔍</span>
+                    <input type="text" id="tickerInput" placeholder="ใส่ชื่อหุ้น เช่น AAPL, TSLA, NVDA">
+                </div>
+                <button class="btn-search" onclick="searchStock()">ค้นหา</button>
+
+                <select id="screenerMode" class="screener-mode-select">
+                    <option value="buy">🔥 Mode: BUY (เทคนิคคอล)</option>
+                    <option value="hold">💎 Mode: HOLD (ออมยาว)</option>
+                </select>
+                <button class="btn-screener" onclick="runScreener()">สแกนหุ้น</button>
+            </div>
+
+            <div id="recentlyViewedRow" class="recently-viewed-row"></div>
+        </section>
+
+        <section id="dailyDigestCard" class="card daily-digest-card" style="display:none;">
+            <div class="digest-header">
+                <div class="digest-title">📋 สรุปประจำวัน — <span id="digestDate"></span></div>
+                <button class="digest-close-btn" onclick="dismissDailyDigest()" aria-label="ปิดสรุปประจำวัน">✕</button>
+            </div>
+            <div class="digest-stats">
+                <div class="digest-stat">
+                    <div class="digest-stat-value" id="digestBuyCount">-</div>
+                    <div class="digest-stat-label">🔥 BUY จากสแกนล่าสุด</div>
+                </div>
+                <div class="digest-stat">
+                    <div class="digest-stat-value" id="digestHoldCount">-</div>
+                    <div class="digest-stat-label">💎 HOLD จากสแกนล่าสุด</div>
+                </div>
+                <div class="digest-stat">
+                    <div class="digest-stat-value" id="digestAlertCount">-</div>
+                    <div class="digest-stat-label">🔔 แจ้งเตือนวันนี้</div>
+                </div>
+            </div>
+            <div id="digestFavBuySection" class="digest-fav-section" style="display:none;">
+                <div class="digest-fav-title">⭐ รายการโปรดที่เป็น BUY ตอนนี้:</div>
+                <div id="digestFavList" class="digest-fav-list"></div>
+            </div>
+        </section>
+
+        <section id="resultBox" class="result-box card">
+
+            <div class="stock-detail">
+                <div class="detail-left">
+                    <div class="stock-header">
+                        <div id="logoBox" class="logo-container">
+                            <img id="stockLogo" src="" alt="Logo">
+                        </div>
+                        <h1 id="stockTicker">-</h1>
+                        <button id="favStarBtn" class="btn-fav-star" onclick="toggleFavorite()" aria-label="เพิ่ม/นำออกจากรายการโปรด">☆</button>
+                    </div>
+
+                    <div id="stockPrice" class="price">$0.00</div>
+                    <div id="stockSignal" class="signal">HOLD</div>
+                    <div id="comboSignalBadge" class="combo-signal-badge" style="display:none;"></div>
+
+                    <div class="tf-bar">
+                        <button class="btn-tf" id="tf-1m" onclick="changeTimeframe('1m')">1m</button>
+                        <button class="btn-tf" id="tf-5m" onclick="changeTimeframe('5m')">5m</button>
+                        <button class="btn-tf" id="tf-15m" onclick="changeTimeframe('15m')">15m</button>
+                        <button class="btn-tf" id="tf-30m" onclick="changeTimeframe('30m')">30m</button>
+                        <button class="btn-tf" id="tf-1h" onclick="changeTimeframe('1h')">1h</button>
+                        <button class="btn-tf active" id="tf-1d" onclick="changeTimeframe('1d')">1d</button>
+                    </div>
+
+                    <div class="auto-refresh-row">
+                        <label class="auto-refresh-toggle">
+                            <input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()">
+                            🔄 Auto-refresh (30s)
+                        </label>
+                        <span id="lastUpdatedLabel" class="last-updated-label"></span>
+                    </div>
+
+                    <div class="levels">
+                        <div class="level-row">
+                            <span class="level-label">🔴 แนวต้านล่าสุด</span>
+                            <span id="resistanceLevels" class="level-value down">-</span>
+                        </div>
+                        <div class="level-row">
+                            <span class="level-label">🟢 แนวรับล่าสุด</span>
+                            <span id="supportLevels" class="level-value up">-</span>
+                        </div>
+                    </div>
+                    <div class="levels-legend">* = ค่าประมาณการ ยังไม่เคยเกิดขึ้นจริง</div>
+
+                    <div class="alert-setter">
+                        <div class="alert-setter-title">🔔 ตั้งแจ้งเตือน</div>
+
+                        <div class="alert-kind-tabs">
+                            <button type="button" class="alert-kind-btn active" id="kindBtnPrice" onclick="setAlertKind('price')">ราคา</button>
+                            <button type="button" class="alert-kind-btn" id="kindBtnSignal" onclick="setAlertKind('signal')">เปลี่ยนสัญญาณ</button>
+                            <button type="button" class="alert-kind-btn" id="kindBtnBreakout" onclick="setAlertKind('breakout')">ทะลุแนวรับ/ต้าน</button>
+                        </div>
+
+                        <div id="priceAlertFields" class="alert-setter-row">
+                            <select id="alertCondition" aria-label="เงื่อนไขราคา">
+                                <option value="below">ต่ำกว่า</option>
+                                <option value="above">สูงกว่า</option>
+                            </select>
+                            <input type="number" id="alertPriceInput" placeholder="ราคา ($)" aria-label="ราคาที่ต้องการให้แจ้งเตือน">
+                        </div>
+
+                        <div id="signalAlertFields" class="alert-setter-row" style="display:none;">
+                            <select id="alertTargetSignal" aria-label="สัญญาณเป้าหมาย">
+                                <option value="BUY">เมื่อเปลี่ยนเป็น BUY</option>
+                                <option value="HOLD">เมื่อเปลี่ยนเป็น HOLD</option>
+                            </select>
+                        </div>
+
+                        <div id="breakoutAlertFields" class="alert-setter-row" style="display:none;">
+                            <span class="breakout-alert-hint">แจ้งเตือนอัตโนมัติเมื่อราคาหุ้นตัวนี้ทะลุแนวต้าน หรือหลุดแนวรับสำคัญ ไม่ต้องกรอกราคาเอง</span>
+                        </div>
+
+                        <button class="btn-set-alert btn-set-alert-full" onclick="createAlert()">ตั้งเตือน</button>
+                    </div>
+                </div>
+
+                <div class="detail-right">
+                    <div class="chart-container">
+                        <canvas id="cryptoChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="indicators-row">
+                <div class="indicator-box">
+                    <div class="indicator-label">RSI (14)</div>
+                    <div id="rsiValue" class="indicator-value">-</div>
+                    <div id="rsiZone" class="indicator-zone">-</div>
+                </div>
+                <div class="indicator-box">
+                    <div class="indicator-label">MACD</div>
+                    <div id="macdValue" class="indicator-value">-</div>
+                    <div id="macdCross" class="indicator-zone">-</div>
+                </div>
+                <div class="indicator-chart-wrap">
+                    <div class="chart-container macd-chart-container">
+                        <canvas id="macdChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="news-section">
+                <div class="news-section-header" role="button" tabindex="0" id="newsSectionHeader"
+                    aria-expanded="true" aria-controls="newsListWrap" aria-label="ย่อ/ขยายรายการข่าวล่าสุด"
+                    onclick="toggleNewsSection()"
+                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleNewsSection();}">
+                    <span class="news-section-title">📰 ข่าวล่าสุด</span>
+                    <span id="newsToggleIcon" class="news-toggle-icon">▲</span>
+                </div>
+                <div id="newsListWrap" class="news-list-wrap">
+                    <div id="newsList" class="news-list">
+                        <div class="news-empty">เลือกหุ้นเพื่อดูข่าวล่าสุดครับ</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+
+        <section id="screenerWrapper" class="card">
+            <div class="market-tabs">
+                <div id="tab-all" class="tab-item active" role="tab" tabindex="0" aria-selected="true" onclick="switchTab('all')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('all');}">🔥 ทั้งหมด (สแกนเทคนิคคอล)</div>
+                <div id="tab-fav" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('fav')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('fav');}">⭐ ชื่นชอบ</div>
+            </div>
+
+            <div class="table-toolbar">
+                <div class="input-wrap toolbar-search">
+                    <span class="input-icon">🔍</span>
+                    <input type="text" id="filterTicker" placeholder="กรองตามชื่อหุ้น..." oninput="onFilterChange()">
+                </div>
+                <input type="number" id="filterMinPrice" class="toolbar-num" placeholder="ราคาต่ำสุด ($)" oninput="onFilterChange()">
+                <input type="number" id="filterMaxPrice" class="toolbar-num" placeholder="ราคาสูงสุด ($)" oninput="onFilterChange()">
+                <button class="btn-reset-filter" onclick="resetFilters()">ล้างตัวกรอง</button>
+                <button class="btn-export-csv" onclick="exportTableCsv()">📥 Export CSV</button>
+            </div>
+
+            <div class="table-scroll-container">
+                <table id="mainStockTable">
+                    <thead>
+                        <tr>
+                            <th class="col-compare">⚖️</th>
+                            <th class="col-star">⭐</th>
+                            <th class="col-no">อันดับ</th>
+                            <th>โลโก้</th>
+                            <th class="sortable" id="th-ticker" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('ticker')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('ticker');}">ชื่อหุ้น <span id="sort-icon-ticker" class="sort-icon"></span></th>
+                            <th class="sortable" id="th-price" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('price')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('price');}">ราคาปัจจุบัน <span id="sort-icon-price" class="sort-icon"></span></th>
+                            <th class="sortable" id="th-support" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('support')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('support');}">แนวรับล่าสุด <span id="sort-icon-support" class="sort-icon"></span></th>
+                            <th>สัญญาณ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableRows">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="compareSection" class="card" style="display:none;">
+            <div class="compare-header">
+                <div class="compare-title">⚖️ เปรียบเทียบหุ้น</div>
+                <button class="btn-reset-filter" onclick="closeCompare()">ปิดหน้าเปรียบเทียบ</button>
+            </div>
+            <div class="table-scroll-container compare-table-wrap">
+                <table id="compareTable">
+                    <thead>
+                        <tr>
+                            <th>ชื่อหุ้น</th>
+                            <th>ราคาปัจจุบัน</th>
+                            <th>สัญญาณ</th>
+                            <th>แนวรับล่าสุด</th>
+                            <th>แนวต้านล่าสุด</th>
+                            <th>RSI</th>
+                        </tr>
+                    </thead>
+                    <tbody id="compareTableRows"></tbody>
+                </table>
+            </div>
+            <div class="chart-container compare-chart-container">
+                <canvas id="compareChart"></canvas>
+            </div>
+        </section>
+
+    </div>
+
+    <div id="compareBar" class="compare-bar" style="display:none;">
+        <span id="compareBarLabel">เลือกไว้ 0 ตัว</span>
+        <button class="btn-set-alert" onclick="openCompare()">เปรียบเทียบ</button>
+        <button class="alert-remove-btn" onclick="clearCompareSelection()">ล้าง</button>
+    </div>
+
+
+    <script>
+        // ========= ตั้งค่า URL ของ backend ตรงนี้ที่เดียว =========
+        // ตอนนี้ index.html ถูกเสิร์ฟจาก backend ตัวเดียวกันแล้ว (ผ่าน route "/" ใน main.py)
+        // เลยใช้ path แบบ relative ("") ได้เลย ไม่ต้องเขียน URL เต็มอีกต่อไป
+        // ใช้ได้ทั้งตอน dev บนเครื่องตัวเอง (http://127.0.0.1:8000/) และตอน deploy จริงบน Render
+        // โดยไม่ต้องแก้ค่านี้เลยแม้แต่ครั้งเดียว
+        const API_BASE = "";
+
+        let currentChart = null;
+        let currentTicker = "";
+        let currentTimeframe = "1d";
+        let currentTab = "all";
+        let isFirstLoadLoading = true;
+
+        let latestScreenerData = [];
+        let currentScreenerType = "buy"; // ควบคุมการแสดงสัญลักษณ์หลัก ("buy" หรือ "hold")
+        let favoriteStocks = JSON.parse(localStorage.getItem('favStocks')) || [];
+        let recentlyViewed = JSON.parse(localStorage.getItem('recentlyViewed')) || [];
+        const MAX_RECENTLY_VIEWED = 8;
+        const DEFAULT_LOGO = "https://cdn-icons-png.flaticon.com/512/3421/3421111.png";
+
+        // ========= Ticker validation / fuzzy suggestion =========
+        // รายชื่อหุ้นที่ backend สแกนอยู่เป็นหลัก (ต้องตรงกับ STOCKS_TO_SCAN ใน main.py)
+        // ใช้เป็นฐานสำหรับเดา ticker ที่พิมพ์ผิด ไม่ได้แปลว่าหุ้นนอกลิสต์นี้ค้นหาไม่ได้
+        const KNOWN_TICKERS = [
+            "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "AMD", "INTC",
+            "AVGO", "QCOM", "TXN", "MU", "SMCI", "ARM", "ASML", "NFLX", "ADBE", "ORCL",
+            "CRM", "CSCO", "ACN", "IBM", "LRCX", "AMAT", "ADI", "PANW", "SNPS", "CDNS",
+            "KLAC", "APH", "FTNT", "PLTR", "NOW", "WDAY", "ROP", "ANSS", "TEAM", "MDB",
+            "DDOG", "NET", "OKTA", "ZS", "CRWD", "SE", "SHOP", "PINS", "SNAP", "TWLO",
+            "DOCU", "ZM", "U", "STNE", "AFRM", "HOOD", "BRK-B", "JPM", "BAC", "WFC",
+            "MS", "GS", "V", "MA", "PYPL", "COIN", "AXP", "BLK", "C", "SCHW",
+            "SPGI", "MMC", "CB", "PGR", "MDLZ", "AON", "TRV", "ALL", "MET", "PRU"
+        ];
+
+        function levenshteinDistance(a, b) {
+            const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+            for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+            for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+            for (let i = 1; i <= a.length; i++) {
+                for (let j = 1; j <= b.length; j++) {
+                    dp[i][j] = (a[i - 1] === b[j - 1])
+                        ? dp[i - 1][j - 1]
+                        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+                }
+            }
+            return dp[a.length][b.length];
+        }
+
+        function findClosestTicker(input) {
+            const upperInput = input.toUpperCase();
+            if (KNOWN_TICKERS.includes(upperInput)) return null; // พิมพ์ถูกอยู่แล้ว ไม่ต้อง suggest
+
+            let best = null;
+            let bestDist = Infinity;
+            KNOWN_TICKERS.forEach(t => {
+                const d = levenshteinDistance(upperInput, t);
+                if (d < bestDist) { bestDist = d; best = t; }
+            });
+
+            // suggest เฉพาะตอนที่ใกล้เคียงจริงๆ (ไม่ใช่เดาส่งเดชกับคำที่ต่างกันเยอะ)
+            const threshold = Math.max(1, Math.ceil(upperInput.length * 0.4));
+            return (best && bestDist > 0 && bestDist <= threshold) ? best : null;
+        }
+
+        function showTickerSuggestionToast(wrongTicker, suggestion) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast toast-alert';
+            toast.innerHTML = `ไม่พบ <b>${wrongTicker}</b> — หมายถึง <b>${suggestion}</b> หรือไม่?
+                <div class="toast-actions">
+                    <button class="toast-action-btn">ไปที่ ${suggestion}</button>
+                </div>`;
+            container.appendChild(toast);
+
+            toast.querySelector('.toast-action-btn').onclick = () => {
+                toast.remove();
+                currentTicker = suggestion;
+                document.getElementById('tickerInput').value = suggestion;
+                fetchDataAndRender();
+            };
+
+            setTimeout(() => { toast.classList.add('toast-hide'); }, 8000);
+            setTimeout(() => { toast.remove(); }, 8500);
+        }
+
+
+        function addRecentlyViewed(ticker) {
+            // เอาตัวเดิมออกก่อน (ถ้ามี) แล้วดันตัวใหม่ไปหน้าสุด กันซ้ำ
+            recentlyViewed = recentlyViewed.filter(t => t !== ticker);
+            recentlyViewed.unshift(ticker);
+            if (recentlyViewed.length > MAX_RECENTLY_VIEWED) {
+                recentlyViewed = recentlyViewed.slice(0, MAX_RECENTLY_VIEWED);
+            }
+            localStorage.setItem('recentlyViewed', JSON.stringify(recentlyViewed));
+            renderRecentlyViewed();
+        }
+
+        function removeRecentlyViewed(ticker, event) {
+            if (event) event.stopPropagation();
+            recentlyViewed = recentlyViewed.filter(t => t !== ticker);
+            localStorage.setItem('recentlyViewed', JSON.stringify(recentlyViewed));
+            renderRecentlyViewed();
+        }
+
+        function renderRecentlyViewed() {
+            const row = document.getElementById('recentlyViewedRow');
+            if (!recentlyViewed || recentlyViewed.length === 0) {
+                row.innerHTML = '';
+                return;
+            }
+
+            const chips = recentlyViewed.map(ticker => `
+                <div class="rv-chip" onclick="openStockFromTable('${ticker}')">
+                    <span>${ticker}</span>
+                    <span class="rv-remove" role="button" tabindex="0" aria-label="ลบ ${ticker} ออกจากประวัติการดู"
+                        onclick="removeRecentlyViewed('${ticker}', event)"
+                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();removeRecentlyViewed('${ticker}', event);}">✕</span>
+                </div>
+            `).join('');
+
+            row.innerHTML = `<span class="rv-label">ดูล่าสุด:</span>${chips}`;
+        }
+
+        // ========= Price Alert =========
+        let priceAlerts = JSON.parse(localStorage.getItem('priceAlerts')) || [];
+        let alertHistory = JSON.parse(localStorage.getItem('alertHistory')) || [];
+        const MAX_ALERT_HISTORY = 50;
+        let signalAlerts = JSON.parse(localStorage.getItem('signalAlerts')) || [];
+        let breakoutAlerts = JSON.parse(localStorage.getItem('breakoutAlerts')) || [];
+        // จำสัญญาณล่าสุดที่เคยเห็นของแต่ละ ticker ไว้ เพื่อเทียบว่า "เปลี่ยน" จริงไหม (ไม่ใช่แค่ตรงเป้าอยู่แล้วตั้งแต่แรก)
+        let lastKnownSignals = JSON.parse(localStorage.getItem('lastKnownSignals')) || {};
+        let currentAlertKind = 'price';
+
+        function saveAlerts() {
+            localStorage.setItem('priceAlerts', JSON.stringify(priceAlerts));
+            renderAlertPanel();
+        }
+
+        function saveSignalAlerts() {
+            localStorage.setItem('signalAlerts', JSON.stringify(signalAlerts));
+            renderAlertPanel();
+        }
+
+        function saveBreakoutAlerts() {
+            localStorage.setItem('breakoutAlerts', JSON.stringify(breakoutAlerts));
+            renderAlertPanel();
+        }
+
+        function setAlertKind(kind) {
+            currentAlertKind = kind;
+            document.getElementById('kindBtnPrice').classList.toggle('active', kind === 'price');
+            document.getElementById('kindBtnSignal').classList.toggle('active', kind === 'signal');
+            document.getElementById('kindBtnBreakout').classList.toggle('active', kind === 'breakout');
+            document.getElementById('priceAlertFields').style.display = kind === 'price' ? 'flex' : 'none';
+            document.getElementById('signalAlertFields').style.display = kind === 'signal' ? 'flex' : 'none';
+            document.getElementById('breakoutAlertFields').style.display = kind === 'breakout' ? 'flex' : 'none';
+        }
+
+        function createAlert() {
+            if (!currentTicker) {
+                showToast('กรุณาเปิดหน้าหุ้นก่อนตั้งแจ้งเตือนครับ', 'alert');
+                return;
+            }
+
+            if (currentAlertKind === 'price') {
+                const condition = document.getElementById('alertCondition').value;
+                const priceVal = parseFloat(document.getElementById('alertPriceInput').value);
+                if (isNaN(priceVal) || priceVal <= 0) {
+                    showToast('กรุณาใส่ราคาที่ถูกต้องครับ', 'alert');
+                    return;
+                }
+
+                priceAlerts.push({
+                    id: `${currentTicker}-${Date.now()}`,
+                    ticker: currentTicker,
+                    condition,
+                    price: priceVal
+                });
+                saveAlerts();
+                document.getElementById('alertPriceInput').value = '';
+
+                const condText = condition === 'below' ? 'ต่ำกว่า' : 'สูงกว่า';
+                showToast(`ตั้งแจ้งเตือนราคา ${currentTicker} ${condText} $${priceVal} เรียบร้อยแล้ว`, 'info');
+            } else if (currentAlertKind === 'signal') {
+                const targetSignal = document.getElementById('alertTargetSignal').value;
+                signalAlerts.push({
+                    id: `${currentTicker}-sig-${Date.now()}`,
+                    ticker: currentTicker,
+                    targetSignal
+                });
+                saveSignalAlerts();
+                showToast(`ตั้งแจ้งเตือน ${currentTicker} เมื่อสัญญาณเปลี่ยนเป็น ${targetSignal} เรียบร้อยแล้ว`, 'info');
+            } else {
+                // breakout
+                if (breakoutAlerts.some(a => a.ticker === currentTicker)) {
+                    showToast(`ตั้งแจ้งเตือนทะลุแนวรับ/ต้านของ ${currentTicker} ไว้แล้วครับ`, 'alert');
+                    return;
+                }
+                breakoutAlerts.push({
+                    id: `${currentTicker}-brk-${Date.now()}`,
+                    ticker: currentTicker
+                });
+                saveBreakoutAlerts();
+                showToast(`ตั้งแจ้งเตือน ${currentTicker} เมื่อราคาทะลุแนวรับ/แนวต้านเรียบร้อยแล้ว`, 'info');
+            }
+
+            // ขอ permission แจ้งเตือนของเบราว์เซอร์ไว้ล่วงหน้า (ถ้ายังไม่เคยถาม)
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+
+        function removeAlert(id) {
+            priceAlerts = priceAlerts.filter(a => a.id !== id);
+            saveAlerts();
+        }
+
+        function removeSignalAlert(id) {
+            signalAlerts = signalAlerts.filter(a => a.id !== id);
+            saveSignalAlerts();
+        }
+
+        function removeBreakoutAlert(id) {
+            breakoutAlerts = breakoutAlerts.filter(a => a.id !== id);
+            saveBreakoutAlerts();
+        }
+
+        function toggleAlertPanel(event) {
+            if (event) event.stopPropagation();
+            const panel = document.getElementById('alertPanel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // ปิด panel อัตโนมัติเมื่อคลิกนอกกรอบ
+        document.addEventListener('click', function(event) {
+            const panel = document.getElementById('alertPanel');
+            const wrap = document.querySelector('.alert-bell-wrap');
+            if (panel && panel.style.display === 'block' && wrap && !wrap.contains(event.target)) {
+                panel.style.display = 'none';
+            }
+        });
+
+        let alertPanelTab = 'active';
+
+        function switchAlertPanelTab(tab) {
+            alertPanelTab = tab;
+            document.getElementById('apTabActive').classList.toggle('active', tab === 'active');
+            document.getElementById('apTabHistory').classList.toggle('active', tab === 'history');
+            document.getElementById('historyActionRow').style.display = tab === 'history' ? 'flex' : 'none';
+            renderAlertPanel();
+        }
+
+        function formatHistoryTime(ts) {
+            const d = new Date(ts);
+            const now = new Date();
+            const sameDay = d.toDateString() === now.toDateString();
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return sameDay ? `${hh}:${mm}` : `${d.getDate()}/${d.getMonth() + 1} ${hh}:${mm}`;
+        }
+
+        function renderAlertPanel() {
+            const badge = document.getElementById('alertBadge');
+            const total = priceAlerts.length + signalAlerts.length + breakoutAlerts.length;
+            if (total > 0) {
+                badge.style.display = 'flex';
+                badge.innerText = total;
+            } else {
+                badge.style.display = 'none';
+            }
+
+            const list = document.getElementById('alertList');
+
+            if (alertPanelTab === 'history') {
+                if (alertHistory.length === 0) {
+                    list.innerHTML = `<div class="alert-empty">ยังไม่มีประวัติการแจ้งเตือนครับ</div>`;
+                    return;
+                }
+                const kindIcon = { price: '💲', signal: '📶', breakout: '📈' };
+                list.innerHTML = alertHistory.map(h => `
+                    <div class="alert-history-item">
+                        <div class="alert-history-top">
+                            <span class="mono alert-ticker">${h.ticker}</span>
+                            <span class="alert-history-time">${formatHistoryTime(h.timestamp)}</span>
+                        </div>
+                        <div class="alert-history-msg">${kindIcon[h.kind] || '🔔'} ${h.message}</div>
+                    </div>
+                `).join('');
+                return;
+            }
+
+            if (total === 0) {
+                list.innerHTML = `<div class="alert-empty">ยังไม่มีการตั้งแจ้งเตือนครับ</div>`;
+                return;
+            }
+
+            const priceItemsHtml = priceAlerts.map(a => {
+                const condText = a.condition === 'below' ? 'ต่ำกว่า' : 'สูงกว่า';
+                return `<div class="alert-list-item">
+                    <div>
+                        <span class="mono alert-ticker">${a.ticker}</span>
+                        <span class="alert-condition">💲 ${condText} $${a.price}</span>
+                    </div>
+                    <button class="alert-remove-btn" onclick="removeAlert('${a.id}')" aria-label="ลบการแจ้งเตือนราคา ${a.ticker}">✕</button>
+                </div>`;
+            }).join('');
+
+            const signalItemsHtml = signalAlerts.map(a => {
+                return `<div class="alert-list-item">
+                    <div>
+                        <span class="mono alert-ticker">${a.ticker}</span>
+                        <span class="alert-condition">📶 เปลี่ยนเป็น ${a.targetSignal}</span>
+                    </div>
+                    <button class="alert-remove-btn" onclick="removeSignalAlert('${a.id}')" aria-label="ลบการแจ้งเตือนสัญญาณ ${a.ticker}">✕</button>
+                </div>`;
+            }).join('');
+
+            const breakoutItemsHtml = breakoutAlerts.map(a => {
+                return `<div class="alert-list-item">
+                    <div>
+                        <span class="mono alert-ticker">${a.ticker}</span>
+                        <span class="alert-condition">📈 ทะลุแนวรับ/ต้าน</span>
+                    </div>
+                    <button class="alert-remove-btn" onclick="removeBreakoutAlert('${a.id}')" aria-label="ลบการแจ้งเตือนทะลุแนวรับ/ต้าน ${a.ticker}">✕</button>
+                </div>`;
+            }).join('');
+
+            list.innerHTML = priceItemsHtml + signalItemsHtml + breakoutItemsHtml;
+        }
+
+        // priceMap: { TICKER: currentPriceตัวเลข } เอาไว้เช็คกับ alert ที่ตั้งไว้ทั้งหมด
+        function checkAlerts(priceMap) {
+            if (priceAlerts.length === 0) return;
+
+            const stillActive = [];
+            let triggeredAny = false;
+
+            priceAlerts.forEach(a => {
+                const price = priceMap[a.ticker];
+                if (price === undefined || price === null || isNaN(price)) {
+                    stillActive.push(a);
+                    return;
+                }
+                const hit = a.condition === 'below' ? price <= a.price : price >= a.price;
+                if (hit) {
+                    triggeredAny = true;
+                    fireAlertNotification(a, price);
+                } else {
+                    stillActive.push(a);
+                }
+            });
+
+            if (triggeredAny) {
+                priceAlerts = stillActive; // แจ้งเตือนแบบครั้งเดียวจบ ไม่สแปมซ้ำ
+                saveAlerts();
+            }
+        }
+
+        // ========= ประวัติการแจ้งเตือน =========
+        function logAlertHistory(kind, ticker, message) {
+            alertHistory.unshift({
+                id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                kind, ticker, message,
+                timestamp: Date.now()
+            });
+            if (alertHistory.length > MAX_ALERT_HISTORY) {
+                alertHistory = alertHistory.slice(0, MAX_ALERT_HISTORY);
+            }
+            localStorage.setItem('alertHistory', JSON.stringify(alertHistory));
+        }
+
+        function clearAlertHistory() {
+            alertHistory = [];
+            localStorage.setItem('alertHistory', JSON.stringify(alertHistory));
+            renderAlertPanel();
+        }
+
+        function fireAlertNotification(alertObj, currentPrice) {
+            const condText = alertObj.condition === 'below' ? 'ต่ำกว่า' : 'สูงกว่า';
+            const text = `${alertObj.ticker} ถึงเงื่อนไขแล้ว: ราคาปัจจุบัน $${currentPrice} (ตั้งไว้ ${condText} $${alertObj.price})`;
+            showToast(text, 'alert');
+            logAlertHistory('price', alertObj.ticker, text);
+
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('🔔 แจ้งเตือนราคาหุ้น', { body: text });
+            }
+        }
+
+        // signalMap: { TICKER: 'BUY'|'HOLD' } เอาไว้เช็คว่าสัญญาณ "เปลี่ยน" มาตรงเป้าที่ตั้งไว้หรือยัง
+        function checkSignalAlerts(signalMap) {
+            const tickers = Object.keys(signalMap);
+            if (tickers.length === 0) return;
+
+            if (signalAlerts.length > 0) {
+                const stillActive = [];
+                let triggeredAny = false;
+
+                signalAlerts.forEach(a => {
+                    const newSignal = signalMap[a.ticker];
+                    if (!newSignal) { stillActive.push(a); return; }
+
+                    const oldSignal = lastKnownSignals[a.ticker];
+                    // นับว่า "ตรงเงื่อนไข" ได้ 2 แบบ: (1) สัญญาณเปลี่ยนมาเป็นเป้าหมายจริงๆ
+                    // (2) ยังไม่เคยมีประวัติของ ticker นี้เลย แต่สัญญาณตอนนี้ตรงเป้าอยู่แล้วตั้งแต่ครั้งแรกที่เห็น
+                    const changedToTarget = oldSignal && oldSignal !== newSignal && newSignal === a.targetSignal;
+                    const firstTimeMatch = !oldSignal && newSignal === a.targetSignal;
+
+                    if (changedToTarget || firstTimeMatch) {
+                        triggeredAny = true;
+                        fireSignalAlertNotification(a, newSignal);
+                    } else {
+                        stillActive.push(a);
+                    }
+                });
+
+                if (triggeredAny) {
+                    signalAlerts = stillActive;
+                    saveSignalAlerts();
+                }
+            }
+
+            // อัปเดตประวัติสัญญาณล่าสุดของทุก ticker ที่เห็นในรอบนี้ไว้เทียบรอบถัดไป
+            tickers.forEach(ticker => { lastKnownSignals[ticker] = signalMap[ticker]; });
+            localStorage.setItem('lastKnownSignals', JSON.stringify(lastKnownSignals));
+        }
+
+        function fireSignalAlertNotification(alertObj, newSignal) {
+            const text = `${alertObj.ticker} เปลี่ยนสัญญาณเป็น ${newSignal} แล้ว!`;
+            showToast(text, 'alert');
+            logAlertHistory('signal', alertObj.ticker, text);
+
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('📶 แจ้งเตือนเปลี่ยนสัญญาณ', { body: text });
+            }
+        }
+
+        // แปลง array ผลสแกน [{ticker, signal?, ...}] เป็น { TICKER: 'BUY'|'HOLD' }
+        // หมายเหตุ: /screener กับ /screener-hold ไม่ได้ส่ง field "signal" มาต่อรายการ (เพราะ backend กรองมาแล้วว่าเป็นประเภทเดียวกันหมด)
+        // เลย fallback ไปใช้ currentScreenerType แทนในกรณีนั้น ซึ่งถูกต้องตามที่ backend คัดกรองมาจริง
+        function buildSignalMap(list) {
+            const map = {};
+            (list || []).forEach(s => {
+                if (s && s.ticker) {
+                    map[s.ticker] = s.signal || currentScreenerType.toUpperCase();
+                }
+            });
+            return map;
+        }
+
+        // แปลง array ผลสแกน/ข้อมูลหุ้นเป็น { TICKER: {price, resistance, support} }
+        // ใช้ index [1] ของแต่ละ array (resistances=[r1,r2,r3], supports=[s3,s2,s1]) เพราะเป็นค่าที่มาจาก
+        // high/low จริงของช่วงเวลาที่ดูอยู่ (แนวต้าน/แนวรับที่แท้จริง) ต่างจาก index อื่นที่คำนวณจาก
+        // ราคาปัจจุบัน ณ ตอนนั้น ±1-2% ซึ่งจะทำให้เช็ค breakout ได้ไม่มีความหมาย (แทบจะเป็นจริงเสมอโดยนิยาม)
+        // หมายเหตุ: /get-all-stocks ไม่ส่ง resistances มา (เช็คได้แค่ฝั่งหลุดแนวรับ)
+        // /screener กับ /screener-hold มีครบทั้งคู่
+        function buildBreakoutMap(list) {
+            const map = {};
+            (list || []).forEach(s => {
+                if (!s || !s.ticker) return;
+                const resistance = (Array.isArray(s.resistances) && s.resistances.length > 1) ? s.resistances[1] : null;
+                const support = (Array.isArray(s.supports) && s.supports.length > 1) ? s.supports[1] : null;
+                map[s.ticker] = {
+                    price: typeof s.current_price === 'number' ? s.current_price : null,
+                    resistance,
+                    support
+                };
+            });
+            return map;
+        }
+
+        function checkBreakoutAlerts(breakoutMap) {
+            if (breakoutAlerts.length === 0) return;
+
+            const stillActive = [];
+            let triggeredAny = false;
+
+            breakoutAlerts.forEach(a => {
+                const info = breakoutMap[a.ticker];
+                if (!info || typeof info.price !== 'number') {
+                    stillActive.push(a);
+                    return;
+                }
+
+                let triggered = false;
+                if (typeof info.resistance === 'number' && info.price > info.resistance) {
+                    fireBreakoutNotification(a, 'resistance', info.price, info.resistance);
+                    triggered = true;
+                } else if (typeof info.support === 'number' && info.price < info.support) {
+                    fireBreakoutNotification(a, 'support', info.price, info.support);
+                    triggered = true;
+                }
+
+                if (triggered) { triggeredAny = true; } else { stillActive.push(a); }
+            });
+
+            if (triggeredAny) {
+                breakoutAlerts = stillActive; // แจ้งครั้งเดียวจบ ไม่สแปมซ้ำ เหมือน alert แบบอื่น
+                saveBreakoutAlerts();
+            }
+        }
+
+        function fireBreakoutNotification(alertObj, direction, price, level) {
+            const text = direction === 'resistance'
+                ? `${alertObj.ticker} ทะลุแนวต้านแล้ว! ราคา $${price} (แนวต้าน $${level.toFixed(2)})`
+                : `${alertObj.ticker} หลุดแนวรับแล้ว! ราคา $${price} (แนวรับ $${level.toFixed(2)})`;
+            showToast(text, 'alert');
+            logAlertHistory('breakout', alertObj.ticker, text);
+
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(direction === 'resistance' ? '🚀 ทะลุแนวต้าน' : '⚠️ หลุดแนวรับ', { body: text });
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerText = message;
+            container.appendChild(toast);
+            setTimeout(() => { toast.classList.add('toast-hide'); }, 5000);
+            setTimeout(() => { toast.remove(); }, 5500);
+        }
+        // ================================
+
+        // ========= Auto-refresh =========
+        let autoRefreshInterval = null;
+        const AUTO_REFRESH_MS = 30000;
+
+        function toggleAutoRefresh() {
+            const checked = document.getElementById('autoRefreshToggle').checked;
+            if (checked) {
+                if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+                autoRefreshInterval = setInterval(() => {
+                    // รีเฟรชเฉพาะตอนแท็บกำลังเปิดอยู่ และมีหุ้นเปิดค้างอยู่ กันยิง API ทิ้งเปล่าๆตอนสลับแท็บ
+                    if (!document.hidden && currentTicker) {
+                        fetchDataAndRender(true);
+                    }
+                }, AUTO_REFRESH_MS);
+            } else {
+                if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        function updateLastUpdatedLabel() {
+            const el = document.getElementById('lastUpdatedLabel');
+            if (!el) return;
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const ss = String(now.getSeconds()).padStart(2, '0');
+            el.innerText = `อัปเดตล่าสุด ${hh}:${mm}:${ss}`;
+        }
+
+        // ========= ข่าวหุ้นรายตัว =========
+        let newsCollapsed = localStorage.getItem('newsCollapsed') === 'true';
+
+        function applyNewsCollapsedState() {
+            const wrap = document.getElementById('newsListWrap');
+            const icon = document.getElementById('newsToggleIcon');
+            const header = document.getElementById('newsSectionHeader');
+            if (!wrap || !icon) return;
+            wrap.classList.toggle('collapsed', newsCollapsed);
+            icon.innerText = newsCollapsed ? '▼' : '▲';
+            if (header) header.setAttribute('aria-expanded', String(!newsCollapsed));
+        }
+
+        function toggleNewsSection() {
+            newsCollapsed = !newsCollapsed;
+            localStorage.setItem('newsCollapsed', newsCollapsed);
+            applyNewsCollapsedState();
+        }
+
+        async function fetchStockNews(ticker) {
+            const list = document.getElementById('newsList');
+            list.innerHTML = `<div class="news-empty">กำลังโหลดข่าว...</div>`;
+            try {
+                const response = await fetch(`${API_BASE}/stock/${ticker}/news`);
+                const data = await response.json();
+                renderNewsList(data.news || []);
+            } catch (error) {
+                list.innerHTML = `<div class="news-empty">โหลดข่าวไม่สำเร็จ ลองใหม่อีกครั้งครับ</div>`;
+            }
+        }
+
+        // ========= Sentiment tag ให้ข่าว (จับคำสำคัญคร่าวๆ ไม่ใช่ NLP จริงจัง) =========
+        const SENTIMENT_POSITIVE_WORDS = [
+            'surge', 'soar', 'soars', 'rally', 'rallies', 'jump', 'jumps', 'gain', 'gains',
+            'beat', 'beats', 'upgrade', 'upgraded', 'record', 'strong', 'growth', 'outperform',
+            'bullish', 'rise', 'rises', 'higher', 'profit', 'profits', 'breakthrough',
+            'positive', 'optimism', 'recovers', 'rebound', 'win', 'wins', 'best month', 'boost'
+        ];
+        const SENTIMENT_NEGATIVE_WORDS = [
+            'fall', 'falls', 'falling', 'plunge', 'plunges', 'drop', 'drops', 'slump', 'slumps',
+            'downgrade', 'downgraded', 'miss', 'misses', 'weak', 'weakness', 'decline', 'declines',
+            'bearish', 'lower', 'loss', 'losses', 'warning', 'warns', 'cut', 'cuts', 'lawsuit',
+            'investigation', 'recall', 'concern', 'concerns', 'crash', 'tumble', 'tumbles',
+            'sues', 'fraud', 'probe', 'risk', 'slows', 'slowdown'
+        ];
+
+        function classifyNewsSentiment(title) {
+            const lower = (title || '').toLowerCase();
+            let posScore = 0, negScore = 0;
+            SENTIMENT_POSITIVE_WORDS.forEach(w => { if (lower.includes(w)) posScore++; });
+            SENTIMENT_NEGATIVE_WORDS.forEach(w => { if (lower.includes(w)) negScore++; });
+            if (posScore === 0 && negScore === 0) return 'neutral';
+            if (posScore === negScore) return 'neutral';
+            return posScore > negScore ? 'positive' : 'negative';
+        }
+
+        function sentimentBadge(sentiment) {
+            if (sentiment === 'positive') return '🟢';
+            if (sentiment === 'negative') return '🔴';
+            return '⚪';
+        }
+
+        function renderNewsList(newsItems) {
+            const list = document.getElementById('newsList');
+            if (!newsItems || newsItems.length === 0) {
+                list.innerHTML = `<div class="news-empty">ไม่พบข่าวล่าสุดสำหรับหุ้นตัวนี้ครับ</div>`;
+                return;
+            }
+
+            list.innerHTML = newsItems.map(item => {
+                const sentiment = classifyNewsSentiment(item.title);
+                return `<a class="news-item" href="${item.link || '#'}" target="_blank" rel="noopener noreferrer">
+                    <div class="news-item-title">
+                        <span class="news-sentiment-badge" title="แนวโน้มคร่าวๆจากการจับคำสำคัญในหัวข้อข่าว ไม่ใช่การวิเคราะห์เชิงลึก">${sentimentBadge(sentiment)}</span>
+                        ${item.title}
+                    </div>
+                    <div class="news-item-meta">${item.publisher || ''}</div>
+                </a>`;
+            }).join('');
+        }
+
+        // ========= RSI / MACD indicator display =========
+        // ========= Combo Signal (สัญญาณซ้อนกัน) =========
+        // แค่ "อ่าน" ค่าที่คำนวณอยู่แล้ว (BUY/HOLD, RSI, MACD) มาเทียบกัน ไม่ได้เปลี่ยนวิธีคำนวณตัวไหนเลย
+        // หมายเหตุ: ใช้ได้เฉพาะหน้ารายละเอียดหุ้น เพราะตารางสแกน (/screener, /get-all-stocks) ไม่ได้ส่ง RSI/MACD มาด้วย
+        function computeComboSignal(data) {
+            const baseSignal = (data.signal || '').split(' ')[0]; // "BUY" หรือ "HOLD"
+            const rsi = data.rsi;
+            const macd = data.macd;
+            const macdSignal = data.macd_signal;
+
+            if (typeof rsi !== 'number' || typeof macd !== 'number' || typeof macdSignal !== 'number') {
+                return null; // ข้อมูลไม่พอ (เช่น หุ้นเพิ่ง IPO ประวัติสั้นเกินไปให้ RSI/MACD เป็น null)
+            }
+
+            const macdBullish = macd > macdSignal;
+            const overbought = rsi >= 70;
+
+            if (baseSignal === 'BUY' && !overbought && macdBullish) {
+                return { type: 'strong-buy', text: '🔥 Strong Buy — สัญญาณตรงกันหลายตัว (BUY + RSI ปกติ + MACD ขาขึ้น)' };
+            }
+            if (baseSignal === 'BUY' && overbought) {
+                return { type: 'caution', text: '⚠️ เป็น BUY แต่ RSI เข้าโซน Overbought แล้ว ควรระวัง' };
+            }
+            return null;
+        }
+
+        function renderComboSignal(data) {
+            const el = document.getElementById('comboSignalBadge');
+            const combo = computeComboSignal(data);
+            if (!combo) {
+                el.style.display = 'none';
+                el.innerText = '';
+                el.className = 'combo-signal-badge';
+                return;
+            }
+            el.style.display = 'inline-flex';
+            el.innerText = combo.text;
+            el.className = `combo-signal-badge ${combo.type}`;
+        }
+
+        function renderIndicators(data) {
+            const rsiEl = document.getElementById('rsiValue');
+            const rsiZoneEl = document.getElementById('rsiZone');
+            const macdEl = document.getElementById('macdValue');
+            const macdCrossEl = document.getElementById('macdCross');
+
+            if (typeof data.rsi === 'number') {
+                rsiEl.innerText = data.rsi.toFixed(2);
+                rsiZoneEl.className = 'indicator-zone';
+                if (data.rsi >= 70) {
+                    rsiZoneEl.innerText = 'Overbought (ซื้อมากไป)';
+                    rsiZoneEl.classList.add('zone-overbought');
+                } else if (data.rsi <= 30) {
+                    rsiZoneEl.innerText = 'Oversold (ขายมากไป)';
+                    rsiZoneEl.classList.add('zone-oversold');
+                } else {
+                    rsiZoneEl.innerText = 'Neutral (ปกติ)';
+                    rsiZoneEl.classList.add('zone-neutral');
+                }
+            } else {
+                rsiEl.innerText = '-';
+                rsiZoneEl.innerText = 'ข้อมูลไม่พอคำนวณ';
+                rsiZoneEl.className = 'indicator-zone zone-neutral';
+            }
+
+            if (typeof data.macd === 'number' && typeof data.macd_signal === 'number') {
+                macdEl.innerText = data.macd.toFixed(3);
+                macdCrossEl.className = 'indicator-zone';
+                if (data.macd > data.macd_signal) {
+                    macdCrossEl.innerText = 'เส้น MACD อยู่เหนือ Signal (ขาขึ้น)';
+                    macdCrossEl.classList.add('zone-buy');
+                } else {
+                    macdCrossEl.innerText = 'เส้น MACD อยู่ใต้ Signal (ขาลง)';
+                    macdCrossEl.classList.add('zone-sell');
+                }
+            } else {
+                macdEl.innerText = '-';
+                macdCrossEl.innerText = 'ข้อมูลไม่พอคำนวณ';
+                macdCrossEl.className = 'indicator-zone zone-neutral';
+            }
+        }
+
+        let macdChartInstance = null;
+
+        function renderMacdChart(data) {
+            const canvas = document.getElementById('macdChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (macdChartInstance) { macdChartInstance.destroy(); }
+
+            if (!data.macd_data || !data.macd_signal_data || !data.macd_histogram_data) return;
+
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const gridColor = isDark ? '#232B45' : '#E9EBF3';
+            const tickColor = isDark ? '#EDEFF6' : '#12162A';
+
+            const histColors = data.macd_histogram_data.map(v =>
+                (v === null) ? 'transparent' : (v >= 0 ? 'rgba(58,214,143,0.6)' : 'rgba(255,92,108,0.6)')
+            );
+
+            macdChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.chart_dates,
+                    datasets: [
+                        { type: 'bar', label: 'Histogram', data: data.macd_histogram_data, backgroundColor: histColors, borderWidth: 0 },
+                        { type: 'line', label: 'MACD', data: data.macd_data, borderColor: '#4FD1C5', borderWidth: 1.5, pointRadius: 0, fill: false },
+                        { type: 'line', label: 'Signal', data: data.macd_signal_data, borderColor: '#E8B34C', borderWidth: 1.5, pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 6 } },
+                        y: { grid: { color: gridColor }, ticks: { color: tickColor } }
+                    },
+                    plugins: { legend: { display: true, labels: { color: tickColor, boxWidth: 12, font: { size: 10.5 } } } }
+                }
+            });
+        }
+
+        // ========= Compare mode =========
+        let compareSelected = [];
+        const MAX_COMPARE = 3;
+        let compareChartInstance = null;
+
+        function toggleCompareSelect(ticker, checked) {
+            if (checked) {
+                if (compareSelected.length >= MAX_COMPARE) {
+                    showToast(`เปรียบเทียบได้สูงสุด ${MAX_COMPARE} ตัวครับ`, 'alert');
+                    renderTable(); // รีเซ็ต checkbox ตัวที่เพิ่งติ๊กเกินมาให้กลับไปไม่ติ๊ก
+                    return;
+                }
+                if (!compareSelected.includes(ticker)) compareSelected.push(ticker);
+            } else {
+                compareSelected = compareSelected.filter(t => t !== ticker);
+            }
+            updateCompareBar();
+        }
+
+        function updateCompareBar() {
+            const bar = document.getElementById('compareBar');
+            const label = document.getElementById('compareBarLabel');
+            if (compareSelected.length >= 2) {
+                bar.style.display = 'flex';
+                label.innerText = `เลือกไว้ ${compareSelected.length} ตัว`;
+            } else {
+                bar.style.display = 'none';
+            }
+        }
+
+        function clearCompareSelection() {
+            compareSelected = [];
+            updateCompareBar();
+            renderTable();
+        }
+
+        function closeCompare() {
+            document.getElementById('compareSection').style.display = 'none';
+        }
+
+        async function openCompare() {
+            toggleOverlay(true);
+            try {
+                const results = await Promise.all(
+                    compareSelected.map(ticker =>
+                        fetch(`${API_BASE}/stock/${ticker}?tf=1d`).then(r => r.json())
+                    )
+                );
+
+                renderCompareTable(results);
+                renderCompareChart(results);
+
+                document.getElementById('compareSection').style.display = 'block';
+                document.getElementById('compareSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (error) {
+                showToast('โหลดข้อมูลเปรียบเทียบไม่สำเร็จ ลองใหม่อีกครั้งครับ', 'alert');
+            } finally {
+                toggleOverlay(false);
+            }
+        }
+
+        function renderCompareTable(results) {
+            const tbody = document.getElementById('compareTableRows');
+            tbody.innerHTML = results.map(data => {
+                if (data.error) {
+                    return `<tr><td colspan="6" style="color: var(--text-muted);">${data.ticker || '-'}: ${data.error}</td></tr>`;
+                }
+                const rsiText = typeof data.rsi === 'number' ? data.rsi.toFixed(2) : '-';
+                return `<tr>
+                    <td class="cell-mono"><b>${data.ticker}</b></td>
+                    <td class="cell-mono">$${data.current_price}</td>
+                    <td>${data.signal}</td>
+                    <td class="cell-mono" style="color:var(--up-color);">${data.supports[data.supports.length - 1]}</td>
+                    <td class="cell-mono" style="color:var(--down-color);">${data.resistances[data.resistances.length - 1]}</td>
+                    <td class="cell-mono">${rsiText}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderCompareChart(results) {
+            const canvas = document.getElementById('compareChart');
+            const ctx = canvas.getContext('2d');
+            if (compareChartInstance) { compareChartInstance.destroy(); }
+
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const gridColor = isDark ? '#232B45' : '#E9EBF3';
+            const tickColor = isDark ? '#EDEFF6' : '#12162A';
+            const palette = ['#4FD1C5', '#E8B34C', '#7C9BFF'];
+
+            // Normalize เป็น % เปลี่ยนแปลงจากจุดเริ่มต้น เพื่อเทียบหุ้นที่ราคาต่างสเกลกันได้ตรงๆ
+            const datasets = results
+                .filter(data => !data.error && Array.isArray(data.chart_data) && data.chart_data.length > 0)
+                .map((data, i) => {
+                    const base = data.chart_data[0];
+                    const pctData = data.chart_data.map(v => base ? round2((v - base) / base * 100) : 0);
+                    return {
+                        label: data.ticker,
+                        data: pctData,
+                        borderColor: palette[i % palette.length],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false
+                    };
+                });
+
+            const longestLabels = results.reduce((longest, d) =>
+                (d.chart_dates && d.chart_dates.length > longest.length) ? d.chart_dates : longest, []);
+
+            compareChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels: longestLabels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 7 } },
+                        y: {
+                            grid: { color: gridColor },
+                            ticks: { color: tickColor, callback: (v) => `${v}%` }
+                        }
+                    },
+                    plugins: { legend: { display: true, labels: { color: tickColor } } }
+                }
+            });
+        }
+
+        function round2(n) { return Math.round(n * 100) / 100; }
+
+
+        function toggleOverlay(show) {
+            const wrapper = document.getElementById('screenerWrapper');
+            let overlay = document.getElementById('loadingOverlay');
+
+            if (show) {
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.id = 'loadingOverlay';
+                    overlay.className = 'loading-overlay';
+                    overlay.innerHTML = `<div class="spinner"></div><span>กำลังโหลดและวิเคราะห์ข้อมูล...</span>`;
+                    wrapper.appendChild(overlay);
+                }
+            } else {
+                if (overlay) overlay.remove();
+            }
+        }
+
+        // ========= Daily Digest =========
+        function getTodayDateKey() {
+            const d = new Date();
+            return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+        }
+
+        function formatThaiDate() {
+            const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+                'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+            const d = new Date();
+            return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+        }
+
+        function isSameDay(ts, compareDate) {
+            const d = new Date(ts);
+            return d.getFullYear() === compareDate.getFullYear() &&
+                d.getMonth() === compareDate.getMonth() &&
+                d.getDate() === compareDate.getDate();
+        }
+
+        // เรียกเฉพาะตอนโหลดหน้าแรก (ข้อมูลจาก /get-all-stocks) เพราะเป็นจุดเดียวที่มี field
+        // "signal" ต่อหุ้นครบทั้ง 80 ตัวจริงๆ ถ้าเรียกหลังสแกนแบบเลือกโหมด BUY/HOLD ตัวเลขจะไม่ใช่ภาพรวมตลาดจริง
+        function renderDailyDigest(forceShow = false) {
+            const dismissedDate = localStorage.getItem('digestDismissedDate');
+            const todayKey = getTodayDateKey();
+            if (!forceShow && dismissedDate === todayKey) return;
+
+            const card = document.getElementById('dailyDigestCard');
+            document.getElementById('digestDate').innerText = formatThaiDate();
+
+            const buyCount = (latestScreenerData || []).filter(s => (s.signal || '').toUpperCase() === 'BUY').length;
+            const holdCount = (latestScreenerData || []).filter(s => (s.signal || '').toUpperCase() === 'HOLD').length;
+            document.getElementById('digestBuyCount').innerText = buyCount;
+            document.getElementById('digestHoldCount').innerText = holdCount;
+
+            const todayAlertCount = alertHistory.filter(h => isSameDay(h.timestamp, new Date())).length;
+            document.getElementById('digestAlertCount').innerText = todayAlertCount;
+
+            const favBuyList = favoriteStocks.filter(ticker => {
+                const match = (latestScreenerData || []).find(s => s.ticker === ticker);
+                return match && (match.signal || '').toUpperCase() === 'BUY';
+            });
+
+            const favSection = document.getElementById('digestFavBuySection');
+            if (favBuyList.length > 0) {
+                favSection.style.display = 'block';
+                document.getElementById('digestFavList').innerHTML = favBuyList.map(t =>
+                    `<span class="digest-fav-chip" onclick="openStockFromTable('${t}')">${t}</span>`
+                ).join('');
+            } else {
+                favSection.style.display = 'none';
+            }
+
+            card.style.display = 'block';
+            if (forceShow) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function dismissDailyDigest() {
+            localStorage.setItem('digestDismissedDate', getTodayDateKey());
+            document.getElementById('dailyDigestCard').style.display = 'none';
+        }
+
+        window.onload = function() {
+            renderRecentlyViewed();
+            renderAlertPanel();
+            applyNewsCollapsedState();
+            updateMarketStatus();
+            setInterval(updateMarketStatus, 60000); // เช็คซ้ำทุก 1 นาที
+            autoFetchScreenerOnLoad();
+        };
+
+        async function autoFetchScreenerOnLoad() {
+            isFirstLoadLoading = true;
+            toggleOverlay(true);
+            try {
+                const response = await fetch(`${API_BASE}/get-all-stocks`);
+                const data = await response.json();
+                latestScreenerData = data.stocks || [];
+                currentScreenerType = "buy";
+                renderTickerTape(latestScreenerData);
+                checkAlerts(buildPriceMap(latestScreenerData));
+                checkSignalAlerts(buildSignalMap(latestScreenerData));
+                checkBreakoutAlerts(buildBreakoutMap(latestScreenerData));
+                renderDailyDigest();
+            } catch (error) {
+                console.error("Auto-fetch error:", error);
+                renderTickerTape([]);
+            } finally {
+                isFirstLoadLoading = false;
+                toggleOverlay(false);
+                renderTable();
+            }
+        }
+
+        // แปลง array ผลสแกน [{ticker, current_price, ...}] ให้เป็น { TICKER: price } เพื่อเช็ค alert ได้ไว
+        // แสดงแนวรับ/แนวต้าน: ตัวที่เป็นราคาจริงโชว์ปกติ ตัวที่เป็นค่าประมาณการ (fallback ±%)
+        // จางกว่า + มี * กำกับ พร้อม tooltip อธิบาย กันสับสนว่าเป็นราคาที่เคยเกิดขึ้นจริงทั้งหมด
+        function formatLevelsHtml(values, isRealList) {
+            if (!Array.isArray(values)) return '-';
+            return values.map((v, i) => {
+                const isReal = Array.isArray(isRealList) && isRealList[i] === true;
+                if (isReal) return v;
+                return `<span class="level-estimated" title="เป็นค่าประมาณการ ยังไม่เคยเกิดขึ้นจริง (คำนวณจากราคาจริงที่ใกล้ที่สุด ±%)">${v}*</span>`;
+            }).join(', ');
+        }
+
+        function buildPriceMap(list) {
+            const map = {};
+            (list || []).forEach(s => {
+                if (s && s.ticker && typeof s.current_price === 'number') {
+                    map[s.ticker] = s.current_price;
+                }
+            });
+            return map;
+        }
+
+        function renderTickerTape(list) {
+            const tape = document.getElementById('tickerTape');
+            if (!list || list.length === 0) {
+                tape.style.animation = 'none';
+                tape.innerHTML = `<div class="ticker-item"><span class="px">ไม่พบข้อมูลตลาดในขณะนี้</span></div>`;
+                return;
+            }
+
+            const buildItem = (s) => {
+                const isBuy = (s.signal || currentScreenerType) === 'BUY' || currentScreenerType === 'buy';
+                const badgeClass = isBuy ? 'buy' : 'hold';
+                const badgeIcon = isBuy ? '▲' : '●';
+                return `<div class="ticker-item">
+                    <span class="sym mono">${s.ticker}</span>
+                    <span class="px mono">$${s.current_price}</span>
+                    <span class="chg ${badgeClass}">${badgeIcon}</span>
+                </div>`;
+            };
+
+            const itemsHtml = list.map(buildItem).join('');
+            tape.style.animation = '';
+            tape.innerHTML = itemsHtml + itemsHtml; // duplicate for seamless loop
+        }
+
+        // ========= สถานะตลาดหุ้นสหรัฐฯ (NYSE/Nasdaq) =========
+        // หมายเหตุ: อ้างอิงแค่เวลาทำการปกติ (จ-ศ 9:30-16:00 ET) ไม่ได้เช็ควันหยุดพิเศษของตลาด
+        const MARKET_OPEN_MIN = 9 * 60 + 30;  // 09:30
+        const MARKET_CLOSE_MIN = 16 * 60;     // 16:00
+        const DAY_INDEX_MAP = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+        function getNYTimeParts() {
+            const fmt = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'America/New_York',
+                weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false
+            });
+            const parts = fmt.formatToParts(new Date());
+            const map = {};
+            parts.forEach(p => { map[p.type] = p.value; });
+            return {
+                weekday: map.weekday,
+                hour: parseInt(map.hour, 10) % 24, // กัน '24' ที่บางเบราว์เซอร์คืนตอนเที่ยงคืน
+                minute: parseInt(map.minute, 10)
+            };
+        }
+
+        function computeMarketStatus() {
+            const { weekday, hour, minute } = getNYTimeParts();
+            const todayIdx = DAY_INDEX_MAP[weekday];
+            const minOfDay = hour * 60 + minute;
+            const isWeekday = todayIdx >= 1 && todayIdx <= 5;
+            const isOpen = isWeekday && minOfDay >= MARKET_OPEN_MIN && minOfDay < MARKET_CLOSE_MIN;
+
+            if (isOpen) {
+                return { isOpen: true, minsUntil: MARKET_CLOSE_MIN - minOfDay };
+            }
+
+            // หาช่วงเปิดตลาดถัดไป ไล่ดูวันถัดไปสูงสุด 7 วันข้างหน้า
+            for (let offset = 0; offset <= 7; offset++) {
+                const dIdx = (todayIdx + offset) % 7;
+                if (dIdx < 1 || dIdx > 5) continue; // ข้ามเสาร์-อาทิตย์
+                if (offset === 0 && minOfDay >= MARKET_OPEN_MIN) continue; // วันนี้เลยเวลาเปิดไปแล้ว (อยู่ช่วงหลังปิดตลาด)
+                const minsUntil = (offset === 0)
+                    ? (MARKET_OPEN_MIN - minOfDay)
+                    : (offset * 1440 - minOfDay + MARKET_OPEN_MIN);
+                return { isOpen: false, minsUntil };
+            }
+            return { isOpen: false, minsUntil: null };
+        }
+
+        function formatMinutesReadable(mins) {
+            if (mins === null || mins === undefined) return '';
+            const h = Math.floor(mins / 60);
+            const m = Math.round(mins % 60);
+            return h > 0 ? `${h} ชม. ${m} นาที` : `${m} นาที`;
+        }
+
+        function updateMarketStatus() {
+            const dot = document.querySelector('#marketStatusBadge .market-status-dot');
+            const text = document.getElementById('marketStatusText');
+            if (!dot || !text) return;
+
+            const status = computeMarketStatus();
+            dot.classList.remove('open', 'closed');
+
+            if (status.isOpen) {
+                dot.classList.add('open');
+                text.innerText = `ตลาดสหรัฐฯเปิดอยู่ · ปิดใน ${formatMinutesReadable(status.minsUntil)}`;
+            } else {
+                dot.classList.add('closed');
+                text.innerText = `ตลาดสหรัฐฯปิดแล้ว · เปิดอีกครั้งใน ${formatMinutesReadable(status.minsUntil)}`;
+            }
+        }
+
+        function toggleTheme() {
+            const root = document.documentElement;
+            const currentTheme = root.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            root.setAttribute('data-theme', newTheme);
+            document.getElementById('themeBtn').innerText = newTheme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode';
+            if (currentTicker) fetchDataAndRender();
+        }
+
+        function getLocalLogoUrl(ticker) {
+            // ดึงโลโก้จาก CDN (jsDelivr proxy ของ GitHub repo โลโก้หุ้นแบบ transparent PNG)
+            // แทนที่จะต้องเก็บไฟล์ logos/ ไว้เองในโปรเจกต์
+            return `https://cdn.jsdelivr.net/gh/davidepalazzo/ticker-logos@main/ticker_icons/${ticker.toUpperCase()}.png`;
+        }
+
+        async function searchStock() {
+            const ticker = document.getElementById('tickerInput').value.toUpperCase();
+            if (!ticker) {
+                showToast('กรุณาใส่ชื่อย่อหุ้นด้วยครับ', 'alert');
+                return;
+            }
+            currentTicker = ticker;
+            fetchDataAndRender();
+        }
+
+        async function fetchDataAndRender(isAuto = false) {
+            try {
+                const response = await fetch(`${API_BASE}/stock/${currentTicker}?tf=${currentTimeframe}`);
+                const data = await response.json();
+                if (data.error) {
+                    const suggestion = findClosestTicker(currentTicker);
+                    if (suggestion) {
+                        showTickerSuggestionToast(currentTicker, suggestion);
+                    } else {
+                        showToast(data.error, 'alert');
+                    }
+                    return;
+                }
+
+                document.getElementById('stockTicker').innerText = data.ticker;
+                document.getElementById('stockPrice').innerText = `$${data.current_price}`;
+                document.getElementById('tickerInput').value = data.ticker;
+
+                const logoBox = document.getElementById('logoBox');
+                const logoImg = document.getElementById('stockLogo');
+
+                logoImg.src = getLocalLogoUrl(data.ticker);
+                logoImg.alt = `โลโก้ ${data.ticker}`;
+                logoBox.style.display = 'flex';
+                logoImg.onerror = function() { this.src = DEFAULT_LOGO; };
+
+                const starBtn = document.getElementById('favStarBtn');
+                if (favoriteStocks.includes(data.ticker)) {
+                    starBtn.innerText = "⭐";
+                    starBtn.classList.add('active');
+                    starBtn.setAttribute('aria-label', `นำ ${data.ticker} ออกจากรายการโปรด`);
+                } else {
+                    starBtn.innerText = "☆";
+                    starBtn.classList.remove('active');
+                    starBtn.setAttribute('aria-label', `เพิ่ม ${data.ticker} ในรายการโปรด`);
+                }
+
+                const signalBox = document.getElementById('stockSignal');
+                signalBox.innerText = `คำแนะนำ: ${data.signal}`;
+
+                if(data.signal.includes('BUY')) {
+                    signalBox.style.backgroundColor = 'rgba(58,214,143,0.15)';
+                    signalBox.style.color = 'var(--up-color)';
+                } else if(data.signal.includes('HOLD')) {
+                    signalBox.style.backgroundColor = 'rgba(124,155,255,0.15)';
+                    signalBox.style.color = 'var(--hold-color)';
+                } else {
+                    signalBox.style.backgroundColor = 'var(--input-bg)';
+                    signalBox.style.color = 'var(--text-color)';
+                }
+
+                document.getElementById('resistanceLevels').innerHTML = formatLevelsHtml(data.resistances, data.resistances_is_real);
+                document.getElementById('supportLevels').innerHTML = formatLevelsHtml(data.supports, data.supports_is_real);
+
+                document.getElementById('resultBox').style.display = 'block';
+                updateChart(data);
+                renderIndicators(data);
+                renderComboSignal(data);
+                renderMacdChart(data);
+                updateLastUpdatedLabel();
+                addRecentlyViewed(data.ticker);
+                checkAlerts({ [data.ticker]: data.current_price });
+                checkSignalAlerts({ [data.ticker]: data.signal.split(' ')[0] });
+                checkBreakoutAlerts(buildBreakoutMap([data]));
+
+                // ข่าวไม่จำเป็นต้องโหลดซ้ำทุกครั้งที่ auto-refresh ราคา (ข่าวไม่ได้เปลี่ยนถี่ขนาดนั้น)
+                if (!isAuto) {
+                    fetchStockNews(data.ticker);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+
+            } catch (error) { showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert'); }
+        }
+
+        function toggleFavorite() {
+            if (!currentTicker) return;
+
+            if (favoriteStocks.includes(currentTicker)) {
+                favoriteStocks = favoriteStocks.filter(item => item !== currentTicker);
+            } else {
+                favoriteStocks.push(currentTicker);
+            }
+
+            localStorage.setItem('favStocks', JSON.stringify(favoriteStocks));
+            fetchDataAndRender();
+            renderTable();
+        }
+
+        function toggleFavoriteFromTable(ticker, event) {
+            if(event) event.stopPropagation();
+
+            if (favoriteStocks.includes(ticker)) {
+                favoriteStocks = favoriteStocks.filter(item => item !== ticker);
+            } else {
+                favoriteStocks.push(ticker);
+            }
+
+            localStorage.setItem('favStocks', JSON.stringify(favoriteStocks));
+            renderTable();
+            if (currentTicker === ticker) fetchDataAndRender();
+        }
+
+        let sortState = { column: null, direction: 'asc' };
+        let filterState = { text: '', minPrice: null, maxPrice: null };
+
+        function toggleSort(column) {
+            if (sortState.column === column) {
+                sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortState.column = column;
+                sortState.direction = 'asc';
+            }
+            updateSortIcons();
+            renderTable();
+        }
+
+        function updateSortIcons() {
+            ['ticker', 'price', 'support'].forEach(col => {
+                const el = document.getElementById(`sort-icon-${col}`);
+                const th = document.getElementById(`th-${col}`);
+                if (el) el.innerText = sortState.column === col ? (sortState.direction === 'asc' ? '▲' : '▼') : '';
+                if (th) {
+                    th.setAttribute('aria-sort', sortState.column === col
+                        ? (sortState.direction === 'asc' ? 'ascending' : 'descending')
+                        : 'none');
+                }
+            });
+        }
+
+        function onFilterChange() {
+            filterState.text = document.getElementById('filterTicker').value.trim().toUpperCase();
+            const minVal = document.getElementById('filterMinPrice').value;
+            const maxVal = document.getElementById('filterMaxPrice').value;
+            filterState.minPrice = minVal === '' ? null : parseFloat(minVal);
+            filterState.maxPrice = maxVal === '' ? null : parseFloat(maxVal);
+            renderTable();
+        }
+
+        function resetFilters() {
+            document.getElementById('filterTicker').value = '';
+            document.getElementById('filterMinPrice').value = '';
+            document.getElementById('filterMaxPrice').value = '';
+            filterState = { text: '', minPrice: null, maxPrice: null };
+            renderTable();
+        }
+
+        // แปลงข้อมูลของทั้ง 2 แท็บ (ทั้งหมด / ชื่นชอบ) ให้อยู่ในรูปแบบเดียวกัน
+        // เพื่อให้ filter/sort ใช้โค้ดชุดเดียวกันได้ ไม่ต้องแยกเขียน 2 รอบ
+        function buildRowsData() {
+            const activeBadge = currentScreenerType === 'hold'
+                ? `<span class="badge-hold">HOLD</span>`
+                : `<span class="badge-buy">BUY</span>`;
+            const activeSignalText = currentScreenerType === 'hold' ? 'HOLD' : 'BUY';
+
+            if (currentTab === 'fav') {
+                return favoriteStocks.map(ticker => {
+                    const matchedStock = latestScreenerData.find(s => s.ticker === ticker);
+                    if (matchedStock) {
+                        const lastSupport = matchedStock.supports[matchedStock.supports.length - 1];
+                        return {
+                            ticker,
+                            price: typeof matchedStock.current_price === 'number' ? matchedStock.current_price : null,
+                            support: typeof lastSupport === 'number' ? lastSupport : null,
+                            priceDisplay: `$${matchedStock.current_price}`,
+                            supportDisplay: `$${lastSupport}`,
+                            badgeHtml: activeBadge,
+                            signalText: activeSignalText
+                        };
+                    }
+                    return {
+                        ticker, price: null, support: null,
+                        priceDisplay: '-', supportDisplay: '-',
+                        badgeHtml: `<span class="badge-fav">FAV</span>`,
+                        signalText: 'FAV'
+                    };
+                });
+            }
+
+            return (latestScreenerData || []).map(stock => {
+                const lastSupport = stock.supports[stock.supports.length - 1];
+                return {
+                    ticker: stock.ticker,
+                    price: typeof stock.current_price === 'number' ? stock.current_price : null,
+                    support: typeof lastSupport === 'number' ? lastSupport : null,
+                    priceDisplay: `$${stock.current_price}`,
+                    supportDisplay: `$${lastSupport}`,
+                    badgeHtml: activeBadge,
+                    signalText: activeSignalText
+                };
+            });
+        }
+
+        function applyFilterAndSort(rows) {
+            let result = rows;
+
+            if (filterState.text) {
+                result = result.filter(r => r.ticker.toUpperCase().includes(filterState.text));
+            }
+            if (filterState.minPrice !== null && !isNaN(filterState.minPrice)) {
+                result = result.filter(r => r.price !== null && r.price >= filterState.minPrice);
+            }
+            if (filterState.maxPrice !== null && !isNaN(filterState.maxPrice)) {
+                result = result.filter(r => r.price !== null && r.price <= filterState.maxPrice);
+            }
+
+            if (sortState.column) {
+                const dir = sortState.direction === 'asc' ? 1 : -1;
+                result = [...result].sort((a, b) => {
+                    if (sortState.column === 'ticker') {
+                        return a.ticker.localeCompare(b.ticker) * dir;
+                    }
+                    const valA = a[sortState.column];
+                    const valB = b[sortState.column];
+                    // ตัวที่ไม่มีข้อมูล (null) ให้ตกไปอยู่ท้ายลิสต์เสมอ ไม่ว่าจะ sort ทิศไหน
+                    if (valA === null && valB === null) return 0;
+                    if (valA === null) return 1;
+                    if (valB === null) return -1;
+                    return (valA - valB) * dir;
+                });
+            }
+
+            return result;
+        }
+
+        // ========= Export CSV =========
+        function escapeCsvField(field) {
+            const str = String(field ?? '');
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        }
+
+        function downloadCsv(filename, headers, rows) {
+            const lines = [headers.map(escapeCsvField).join(',')];
+            rows.forEach(row => {
+                lines.push(row.map(escapeCsvField).join(','));
+            });
+            // ใส่ BOM (\uFEFF) นำหน้า เพื่อให้ Excel เปิดแล้วอ่านภาษาไทย/UTF-8 ได้ถูกต้อง ไม่เพี้ยน
+            const csvContent = '\uFEFF' + lines.join('\r\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function getDateStampForFilename() {
+            const d = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+        }
+
+        // ส่งออกตารางสแกนตามที่กำลังแสดงอยู่จริง (เคารพ tab/filter/sort ปัจจุบัน)
+        function exportTableCsv() {
+            const rows = applyFilterAndSort(buildRowsData());
+            if (rows.length === 0) {
+                showToast('ไม่มีข้อมูลในตารางให้ export ครับ', 'alert');
+                return;
+            }
+
+            const headers = ['อันดับ', 'ชื่อหุ้น', 'ราคาปัจจุบัน ($)', 'แนวรับล่าสุด ($)', 'สัญญาณ'];
+            const csvRows = rows.map((r, i) => [
+                i + 1,
+                r.ticker,
+                r.price !== null ? r.price : '',
+                r.support !== null ? r.support : '',
+                r.signalText
+            ]);
+
+            const tabLabel = currentTab === 'fav' ? 'favorites' : 'all';
+            downloadCsv(`stock-screener-${tabLabel}-${getDateStampForFilename()}.csv`, headers, csvRows);
+            showToast(`ส่งออก ${rows.length} รายการเป็น CSV เรียบร้อยแล้ว`, 'info');
+        }
+
+        // ส่งออกประวัติการแจ้งเตือนทั้งหมด
+        function exportAlertHistoryCsv() {
+            if (alertHistory.length === 0) {
+                showToast('ยังไม่มีประวัติการแจ้งเตือนให้ export ครับ', 'alert');
+                return;
+            }
+
+            const headers = ['วันเวลา', 'ชื่อหุ้น', 'ประเภท', 'ข้อความ'];
+            const kindLabel = { price: 'ราคา', signal: 'เปลี่ยนสัญญาณ', breakout: 'ทะลุแนวรับ/ต้าน' };
+            const csvRows = alertHistory.map(h => [
+                new Date(h.timestamp).toLocaleString('th-TH'),
+                h.ticker,
+                kindLabel[h.kind] || h.kind,
+                h.message
+            ]);
+
+            downloadCsv(`alert-history-${getDateStampForFilename()}.csv`, headers, csvRows);
+            showToast(`ส่งออกประวัติ ${alertHistory.length} รายการเป็น CSV เรียบร้อยแล้ว`, 'info');
+        }
+
+        function switchTab(tabName) {
+            currentTab = tabName;
+            document.querySelectorAll('.tab-item').forEach(tab => {
+                tab.classList.remove('active');
+                tab.setAttribute('aria-selected', 'false');
+            });
+            const activeTab = document.getElementById(`tab-${tabName}`);
+            activeTab.classList.add('active');
+            activeTab.setAttribute('aria-selected', 'true');
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tableRows');
+            tbody.innerHTML = '';
+
+            if (isFirstLoadLoading) return;
+
+            if (currentTab === 'fav' && favoriteStocks.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">ยังไม่มีหุ้นที่ชื่นชอบในรายการครับ สามารถเลือกติดดาวหุ้นที่สนใจไว้ได้จากแท็บ "ทั้งหมด" ครับ</td></tr>`;
+                return;
+            }
+            if (currentTab === 'all' && (!latestScreenerData || latestScreenerData.length === 0)) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">ไม่พบข้อมูลหุ้นในขณะนี้ครับ</td></tr>`;
+                return;
+            }
+
+            const rows = applyFilterAndSort(buildRowsData());
+
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">ไม่พบหุ้นที่ตรงกับตัวกรองครับ ลองปรับช่วงราคาหรือคำค้นหาดูใหม่</td></tr>`;
+                return;
+            }
+
+            rows.forEach((row, index) => {
+                const isFav = favoriteStocks.includes(row.ticker);
+                const starButton = isFav
+                    ? `<button class="btn-table-star" onclick="toggleFavoriteFromTable('${row.ticker}', event)" aria-label="นำ ${row.ticker} ออกจากรายการโปรด">⭐</button>`
+                    : `<button class="btn-table-unstar" onclick="toggleFavoriteFromTable('${row.ticker}', event)" aria-label="เพิ่ม ${row.ticker} ในรายการโปรด">☆</button>`;
+                const isCompareChecked = compareSelected.includes(row.ticker);
+
+                const rowHtml = `<tr class="clickable-row" onclick="openStockFromTable('${row.ticker}')">
+                    <td class="col-compare">
+                        <input type="checkbox" class="compare-checkbox" ${isCompareChecked ? 'checked' : ''}
+                            onclick="event.stopPropagation(); toggleCompareSelect('${row.ticker}', this.checked)"
+                            aria-label="เลือก ${row.ticker} เพื่อเปรียบเทียบ">
+                    </td>
+                    <td class="col-star">${starButton}</td>
+                    <td class="col-no">${index + 1}</td>
+                    <td>
+                        <div class="table-logo-box">
+                            <img src="${getLocalLogoUrl(row.ticker)}" onerror="this.src='${DEFAULT_LOGO}'" alt="โลโก้ ${row.ticker}">
+                        </div>
+                    </td>
+                    <td class="cell-mono"><b>${row.ticker}</b></td>
+                    <td class="cell-mono" style="color:var(--up-color); font-weight:bold;">${row.priceDisplay}</td>
+                    <td class="cell-mono" style="color:var(--up-color);">${row.supportDisplay}</td>
+                    <td>${row.badgeHtml}</td>
+                </tr>`;
+                tbody.innerHTML += rowHtml;
+            });
+        }
+
+        function changeTimeframe(tf) {
+            currentTimeframe = tf;
+            document.querySelectorAll('.btn-tf').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tf-${tf}`).classList.add('active');
+            if (currentTicker) fetchDataAndRender();
+        }
+
+        // ฟังก์ชันสแกนปุ่มหลัก: ตรวจสอบโหมดจาก Dropdown ก่อนยิง API
+        async function runScreener() {
+            const mode = document.getElementById('screenerMode').value;
+            currentScreenerType = mode;
+
+            // อัปเดตข้อความบนหัวแท็บให้เหมาะสมกับโหมดที่กำลังสแกน
+            if (mode === 'buy') {
+                document.getElementById('tab-all').innerText = "🔥 ทั้งหมด (สแกนเทคนิคคอล)";
+            } else {
+                document.getElementById('tab-all').innerText = "💎 ทั้งหมด (สแกนออมหุ้น/ถือยาว)";
+            }
+
+            toggleOverlay(true);
+            try {
+                // เลือกยิง Endpoint ตามโหมดที่เลือกจาก Dropdown
+                const endpoint = mode === 'buy' ? `${API_BASE}/screener` : `${API_BASE}/screener-hold`;
+                const response = await fetch(endpoint);
+                const data = await response.json();
+
+                // รองรับ Key ทั้งแบบเก่าและแบบใหม่จาก API ของบอส
+                latestScreenerData = data.buy_list || data.hold_list || [];
+                renderTickerTape(latestScreenerData);
+                checkAlerts(buildPriceMap(latestScreenerData));
+                checkSignalAlerts(buildSignalMap(latestScreenerData));
+                checkBreakoutAlerts(buildBreakoutMap(latestScreenerData));
+                switchTab('all');
+            } catch (error) {
+                showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert');
+            } finally {
+                toggleOverlay(false);
+            }
+        }
+
+        function openStockFromTable(ticker) {
+            currentTicker = ticker;
+            currentTimeframe = "1d";
+            document.querySelectorAll('.btn-tf').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('tf-1d').classList.add('active');
+            fetchDataAndRender();
+        }
+
+        function updateChart(stockData) {
+            const ctx = document.getElementById('cryptoChart').getContext('2d');
+            if (currentChart) { currentChart.destroy(); }
+
+            const lastSupport = stockData.supports[stockData.supports.length - 1];
+            const lastResistance = stockData.resistances[stockData.resistances.length - 1];
+
+            const supportLine = Array(stockData.chart_data.length).fill(lastSupport);
+            const resistanceLine = Array(stockData.chart_data.length).fill(lastResistance);
+
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const gridColor = isDark ? '#232B45' : '#E9EBF3';
+            const tickColor = isDark ? '#EDEFF6' : '#12162A';
+
+            currentChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: stockData.chart_dates,
+                    datasets: [
+                        { label: 'ราคาปิด', data: stockData.chart_data, borderColor: '#4FD1C5', borderWidth: 2, pointRadius: 0, fill: false },
+                        { label: 'แนวต้าน', data: resistanceLine, borderColor: '#FF5C6C', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false },
+                        { label: 'แนวรับ', data: supportLine, borderColor: '#3ADC8F', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 7 } },
+                        y: { grid: { color: gridColor }, ticks: { color: tickColor } }
+                    },
+                    plugins: { legend: { display: true, labels: { color: tickColor } } }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

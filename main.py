@@ -1,7 +1,9 @@
 import asyncio
 import time
+import os
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -17,6 +19,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ===== เสิร์ฟหน้าเว็บ (index.html) จาก backend ตัวเดียวกันเลย =====
+# ไม่ต้องแยกไป deploy frontend ที่ Netlify/Vercel อีกเว็บหนึ่ง — เข้า URL ของ Render
+# ตรงๆก็เห็นหน้าตาแอปได้เลย (index.html ต้องอยู่โฟลเดอร์เดียวกับ main.py)
+@app.get("/")
+def serve_frontend():
+    index_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+    return FileResponse(index_path)
 
 STOCKS_TO_SCAN = [
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "AMD", "INTC",
