@@ -166,30 +166,44 @@ STOCKS_TO_SCAN = [
 ]
 
 # ========= In-memory TTL cache =========
-# เก็บผลลัพธ์ไว้ชั่วคราวเป็น key -> (timestamp_ที่เก็บ, ข้อมูล)
+# เก็บผลลัพธ์ไว้ชั่วคราวเป็น key -> (timestamp_ที่เก็บ, ข้อมูล, ttl)
 # กัน request ซ้ำๆถี่ๆยิง yfinance รัวจนโดน rate-limit และทำให้ตอบเร็วขึ้นมาก
+#
+# ยืดเวลา cache ให้นานขึ้นเป็น 2 นาที (จากเดิม 30-90 วิ) เพื่อลดความถี่ในการยิง
+# yfinance ลงอีก ช่วยลดความเสี่ยงโดน rate limit ซ้ำในอนาคต
 _cache_store = {}
 
-# หน้าจอสแกนทั้งตลาด (80 ตัว) คำนวณหนัก -> cache นานกว่า
-SCREENER_CACHE_TTL = 90   # วินาที
-# ดูหุ้นรายตัว เบากว่า -> cache สั้นกว่านิดหน่อยเพื่อความสด
-STOCK_CACHE_TTL = 30      # วินาที
+SCREENER_CACHE_TTL = 120  # วินาที (2 นาที) — หน้าจอสแกนทั้งตลาด (80 ตัว)
+STOCK_CACHE_TTL = 120     # วินาที (2 นาที) — ดูหุ้นรายตัว
 
 
-def cache_get(key: str):
+def cache_get(key: str, allow_stale: bool = False):
+    """
+    allow_stale=False (ปกติ): คืนค่าเฉพาะข้อมูลที่ยังไม่หมดอายุ (ตรงเวลา TTL) เหมือนเดิม
+    allow_stale=True: คืนค่าแม้หมดอายุไปแล้วก็ตาม — ใช้เป็น "ทางสำรองฉุกเฉิน" ตอนดึงข้อมูลสดไม่สำเร็จ
+    (เช่น yfinance โดน rate limit) ดีกว่าไม่มีอะไรให้แสดงเลย
+    """
     entry = _cache_store.get(key)
     if entry is None:
         return None
     saved_at, data, ttl = entry
-    if time.time() - saved_at > ttl:
-        # หมดอายุแล้ว ลบทิ้งกันหน่วยความจำบวม
-        _cache_store.pop(key, None)
+    is_expired = (time.time() - saved_at) > ttl
+    if is_expired and not allow_stale:
         return None
     return data
 
 
 def cache_set(key: str, data, ttl: int):
     _cache_store[key] = (time.time(), data, ttl)
+
+
+def cache_age_seconds(key: str):
+    """อายุของข้อมูลใน cache ตอนนี้ (วินาที) เอาไว้บอกผู้ใช้ว่าข้อมูลเก่าไปแล้วกี่นาที ถ้าต้องใช้ fallback"""
+    entry = _cache_store.get(key)
+    if entry is None:
+        return None
+    saved_at, data, ttl = entry
+    return time.time() - saved_at
 
 
 # ========================================
@@ -235,8 +249,19 @@ async def get_all_stocks():
     results = await asyncio.gather(*tasks)
     stocks = [r for r in results if r is not None]
 
+    # ถ้าดึงสดไม่สำเร็จเลยแทบทั้งหมด (เช่น yfinance โดน rate limit ทั้งชุด)
+    # ลองใช้ข้อมูลเก่าที่เคยสำเร็จไว้แทน ดีกว่าปล่อยให้หน้าเว็บว่างเปล่าไม่มีอะไรให้ดูเลย
+    if len(stocks) < 5:
+        stale = cache_get(cache_key, allow_stale=True)
+        if stale is not None and stale.get("stocks"):
+            stale_copy = dict(stale)
+            stale_copy["is_stale"] = True
+            stale_copy["stale_age_seconds"] = round(cache_age_seconds(cache_key) or 0)
+            return stale_copy
+
     result = {
-        "stocks": stocks
+        "stocks": stocks,
+        "is_stale": False
     }
     cache_set(cache_key, result, SCREENER_CACHE_TTL)
     return result
@@ -521,6 +546,14 @@ def get_stock_data(ticker: str, tf: str = "1d"):
         df = stock.history(period=target_period, interval=target_tf)
 
         if df.empty:
+            # ไม่มีข้อมูลกลับมาเลย มักเป็นเพราะดึงจาก yfinance ไม่สำเร็จ (เช่นโดน rate limit)
+            # ลองใช้ข้อมูลเก่าที่เคยสำเร็จของหุ้นตัวนี้แทน ดีกว่าโชว์ error เฉยๆ
+            stale = cache_get(cache_key, allow_stale=True)
+            if stale is not None and not stale.get("error"):
+                stale_copy = dict(stale)
+                stale_copy["is_stale"] = True
+                stale_copy["stale_age_seconds"] = round(cache_age_seconds(cache_key) or 0)
+                return stale_copy
             return {"error": f"ไม่พบข้อมูลสำหรับ TF {tf}"}
 
         analysis = calculate_levels_and_signal(df)
@@ -597,11 +630,19 @@ def get_stock_data(ticker: str, tf: str = "1d"):
             "rsi_data": series_to_json_list(rsi_full, 2),
             "macd_data": series_to_json_list(macd_full, 4),
             "macd_signal_data": series_to_json_list(macd_signal_full, 4),
-            "macd_histogram_data": series_to_json_list(macd_hist_full, 4)
+            "macd_histogram_data": series_to_json_list(macd_hist_full, 4),
+            "is_stale": False
         }
         cache_set(cache_key, result, STOCK_CACHE_TTL)
         return result
     except Exception as e:
+        # ดึงข้อมูลไม่สำเร็จเลย (เช่น yfinance rate limit) -> ลองใช้ข้อมูลเก่าที่เคยสำเร็จแทน
+        stale = cache_get(cache_key, allow_stale=True)
+        if stale is not None and not stale.get("error"):
+            stale_copy = dict(stale)
+            stale_copy["is_stale"] = True
+            stale_copy["stale_age_seconds"] = round(cache_age_seconds(cache_key) or 0)
+            return stale_copy
         return {"error": str(e)}
 
 # ========= ข่าวหุ้นรายตัว =========
@@ -673,7 +714,16 @@ async def run_screener():
     results = await asyncio.gather(*tasks)
     buy_list = [r for r in results if r is not None]
 
-    result = {"buy_list": buy_list}
+    # ปกติหุ้น BUY ควรเจอได้บ้าง ถ้าได้ 0 ตัวเป๊ะๆ (ทั้งที่ก่อนหน้านี้เคยเจอ) น่าจะเป็นเพราะดึงข้อมูลไม่สำเร็จมากกว่า
+    if len(buy_list) == 0:
+        stale = cache_get(cache_key, allow_stale=True)
+        if stale is not None and stale.get("buy_list"):
+            stale_copy = dict(stale)
+            stale_copy["is_stale"] = True
+            stale_copy["stale_age_seconds"] = round(cache_age_seconds(cache_key) or 0)
+            return stale_copy
+
+    result = {"buy_list": buy_list, "is_stale": False}
     cache_set(cache_key, result, SCREENER_CACHE_TTL)
     return result
 
@@ -690,7 +740,15 @@ async def run_screener_hold():
     results = await asyncio.gather(*tasks)
     hold_list = [r for r in results if r is not None]
 
-    result = {"hold_list": hold_list}
+    if len(hold_list) == 0:
+        stale = cache_get(cache_key, allow_stale=True)
+        if stale is not None and stale.get("hold_list"):
+            stale_copy = dict(stale)
+            stale_copy["is_stale"] = True
+            stale_copy["stale_age_seconds"] = round(cache_age_seconds(cache_key) or 0)
+            return stale_copy
+
+    result = {"hold_list": hold_list, "is_stale": False}
     cache_set(cache_key, result, SCREENER_CACHE_TTL)
     return result
 

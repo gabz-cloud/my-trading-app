@@ -394,6 +394,21 @@
             -webkit-transform: translateZ(0);
             transform: translateZ(0);
         }
+
+        .stale-data-banner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(232, 179, 76, 0.12);
+            border-bottom: 1px solid rgba(232, 179, 76, 0.3);
+            color: var(--accent-gold);
+            font-size: 12.5px;
+            font-weight: 600;
+            text-align: center;
+            justify-content: center;
+        }
+        .stale-data-icon { font-size: 13px; }
         .ticker-tape {
             display: flex;
             width: max-content;
@@ -1322,6 +1337,11 @@
         <div class="ticker-tape" id="tickerTape">
             <div class="ticker-item"><span class="px">กำลังโหลดข้อมูลตลาด...</span></div>
         </div>
+    </div>
+
+    <div id="staleDataBanner" class="stale-data-banner" style="display:none;">
+        <span class="stale-data-icon">⚠️</span>
+        <span id="staleDataText">ข้อมูลนี้อาจไม่ใช่ล่าสุด เนื่องจากมีปัญหาการเชื่อมต่อชั่วคราว</span>
     </div>
 
     <div class="page">
@@ -2837,6 +2857,7 @@
                 const data = await response.json();
                 latestScreenerData = data.stocks || [];
                 currentScreenerType = "buy";
+                handleStaleFlag(data);
                 renderTickerTape(latestScreenerData);
                 renderHeatmap();
                 checkAlerts(buildPriceMap(latestScreenerData));
@@ -2878,6 +2899,38 @@
         // ========= Heatmap ภาพรวมตลาด =========
         // แปลง % เปลี่ยนแปลงเป็นสีไล่โทน เขียว (ขึ้น) / แดง (ลง) ยิ่งเปลี่ยนแปลงเยอะยิ่งเข้ม
         // จำกัดช่วงไว้ที่ ±8% กันหุ้นที่ขยับแรงผิดปกติทำให้สีเข้มสุดโต่งจนแยกไม่ออกจากตัวอื่น
+        // ========= แจ้งเตือนเวลาใช้ข้อมูลเก่า (stale) แทนข้อมูลสดที่ดึงไม่สำเร็จ =========
+        function formatStaleAge(seconds) {
+            if (typeof seconds !== 'number') return 'ไม่ทราบเวลา';
+            if (seconds < 60) return `${Math.round(seconds)} วินาทีก่อน`;
+            const mins = Math.round(seconds / 60);
+            if (mins < 60) return `${mins} นาทีก่อน`;
+            const hours = Math.round(mins / 60);
+            return `${hours} ชั่วโมงก่อน`;
+        }
+
+        function showStaleDataBanner(ageSeconds) {
+            const banner = document.getElementById('staleDataBanner');
+            const text = document.getElementById('staleDataText');
+            if (!banner || !text) return;
+            text.innerText = `ข้อมูลนี้อาจไม่ใช่ล่าสุด เนื่องจากมีปัญหาการเชื่อมต่อชั่วคราว (อัปเดตล่าสุดเมื่อ ${formatStaleAge(ageSeconds)})`;
+            banner.style.display = 'flex';
+        }
+
+        function hideStaleDataBanner() {
+            const banner = document.getElementById('staleDataBanner');
+            if (banner) banner.style.display = 'none';
+        }
+
+        // เช็คทุกครั้งที่ได้ response กลับมาว่าเป็นข้อมูลเก่า (fallback) หรือเปล่า แล้วโชว์/ซ่อน banner ตาม
+        function handleStaleFlag(data) {
+            if (data && data.is_stale === true) {
+                showStaleDataBanner(data.stale_age_seconds);
+            } else {
+                hideStaleDataBanner();
+            }
+        }
+
         function heatmapColor(pct) {
             if (typeof pct !== 'number') return 'rgba(130,138,158,0.35)'; // ไม่มีข้อมูล -> สีเทาจาง
             const clamped = Math.max(-8, Math.min(8, pct));
@@ -3107,6 +3160,8 @@
                     }
                     return;
                 }
+
+                handleStaleFlag(data);
 
                 document.getElementById('stockTicker').innerText = data.ticker;
                 document.getElementById('stockPrice').innerText = `$${data.current_price}`;
@@ -3530,6 +3585,7 @@
                 const response = await fetch(`${API_BASE}/get-all-stocks`);
                 const data = await response.json();
                 latestScreenerData = data.stocks || [];
+                handleStaleFlag(data);
                 renderTickerTape(latestScreenerData);
                 renderHeatmap();
                 checkAlerts(buildPriceMap(latestScreenerData));
@@ -3537,7 +3593,11 @@
                 checkBreakoutAlerts(buildBreakoutMap(latestScreenerData));
                 renderDailyDigest(true);
                 renderTable();
-                showToast('รีเฟรชข้อมูลเรียบร้อยแล้ว', 'info');
+                if (data.is_stale) {
+                    showToast('เชื่อมต่อแหล่งข้อมูลไม่สำเร็จ แสดงข้อมูลเก่าที่มีอยู่แทนชั่วคราว', 'alert');
+                } else {
+                    showToast('รีเฟรชข้อมูลเรียบร้อยแล้ว', 'info');
+                }
             } catch (error) {
                 showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert');
             } finally {
