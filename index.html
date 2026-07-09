@@ -197,6 +197,22 @@
             font-size: 14px;
             border-bottom: 1px solid var(--border-color);
         }
+        .push-enable-row { padding: 10px 16px; border-bottom: 1px solid var(--border-color); }
+        .btn-enable-push {
+            width: 100%;
+            padding: 9px 0;
+            background-color: var(--accent-gold);
+            color: #2B1C04;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 700;
+        }
+        .btn-enable-push.push-enabled {
+            background-color: rgba(58, 214, 143, 0.15);
+            color: var(--up-color);
+            border: 1px solid rgba(58, 214, 143, 0.35);
+        }
+        .push-enable-hint { font-size: 10.5px; color: var(--text-muted); line-height: 1.4; margin-top: 6px; }
         .alert-panel-tabs {
             display: flex;
             gap: 4px;
@@ -1115,6 +1131,10 @@
                 </button>
                 <div id="alertPanel" class="alert-panel" style="display:none;">
                     <div class="alert-panel-header">🔔 การแจ้งเตือน</div>
+                    <div class="push-enable-row">
+                        <button type="button" id="enablePushBtn" class="btn-enable-push" onclick="enableRealTimeNotifications()">🔔 เปิดใช้งานแจ้งเตือนแบบพื้นหลัง</button>
+                        <div class="push-enable-hint">ให้เตือนได้แม้ปิดแอปไปแล้ว (เช็คทุก 5 นาทีบน server) — บน iPhone ต้อง "เพิ่มลงหน้าจอโฮม" ก่อนถึงจะใช้ได้</div>
+                    </div>
                     <div class="alert-panel-tabs">
                         <button type="button" class="alert-panel-tab active" id="apTabActive" onclick="switchAlertPanelTab('active')">ที่ตั้งไว้</button>
                         <button type="button" class="alert-panel-tab" id="apTabHistory" onclick="switchAlertPanelTab('history')">ประวัติ</button>
@@ -1530,6 +1550,95 @@
         let lastKnownSignals = JSON.parse(localStorage.getItem('lastKnownSignals')) || {};
         let currentAlertKind = 'price';
 
+        // ========= แจ้งเตือนแบบพื้นหลัง (Web Push) — ทำงานได้แม้ปิดแอปไปแล้ว =========
+        function pushNotificationsEnabled() {
+            return localStorage.getItem('pushEnabled') === 'true';
+        }
+
+        // ส่ง alert ไปให้ server เก็บไว้เช็คเองทุก 5 นาที (นอกเหนือจากที่เช็คในเบราว์เซอร์ตอนเปิดแอปอยู่)
+        async function syncAlertToServer(alertObj) {
+            try {
+                await fetch(`${API_BASE}/alerts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(alertObj)
+                });
+            } catch (e) {
+                console.error('sync alert to server failed:', e);
+            }
+        }
+
+        async function removeAlertFromServer(id) {
+            try {
+                await fetch(`${API_BASE}/alerts/${id}`, { method: 'DELETE' });
+            } catch (e) {
+                console.error('remove alert from server failed:', e);
+            }
+        }
+
+        // แปลง VAPID public key จาก base64url เป็น Uint8Array ตามที่ PushManager ต้องการ
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        async function enableRealTimeNotifications() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                showToast('เบราว์เซอร์หรืออุปกรณ์นี้ไม่รองรับการแจ้งเตือนแบบพื้นหลังครับ (บน iPhone ต้อง "เพิ่มลงหน้าจอโฮม" ก่อนถึงจะใช้ได้)', 'alert');
+                return;
+            }
+
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    showToast('ต้องอนุญาตการแจ้งเตือนก่อนถึงจะเปิดใช้งานได้ครับ', 'alert');
+                    return;
+                }
+
+                const registration = await navigator.serviceWorker.register('/sw.js');
+                await navigator.serviceWorker.ready;
+
+                const keyRes = await fetch(`${API_BASE}/push/vapid-public-key`);
+                const { publicKey } = await keyRes.json();
+
+                const subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(publicKey)
+                });
+
+                await fetch(`${API_BASE}/push/subscribe`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(subscription)
+                });
+
+                localStorage.setItem('pushEnabled', 'true');
+                showToast('เปิดใช้งานแจ้งเตือนพื้นหลังเรียบร้อยแล้ว! ระบบจะเช็คให้ทุก 5 นาทีแม้ปิดแอปไปแล้วก็ตาม', 'info');
+                updatePushButtonState();
+            } catch (err) {
+                console.error('Push subscription failed:', err);
+                showToast('เปิดใช้งานแจ้งเตือนพื้นหลังไม่สำเร็จ ลองใหม่อีกครั้งครับ', 'alert');
+            }
+        }
+
+        function updatePushButtonState() {
+            const btn = document.getElementById('enablePushBtn');
+            if (!btn) return;
+            if (pushNotificationsEnabled()) {
+                btn.innerText = '🔔 เปิดใช้งานแจ้งเตือนพื้นหลังแล้ว ✓';
+                btn.classList.add('push-enabled');
+            } else {
+                btn.innerText = '🔔 เปิดใช้งานแจ้งเตือนแบบพื้นหลัง';
+                btn.classList.remove('push-enabled');
+            }
+        }
+
         function saveAlerts() {
             localStorage.setItem('priceAlerts', JSON.stringify(priceAlerts));
             renderAlertPanel();
@@ -1569,25 +1678,31 @@
                     return;
                 }
 
-                priceAlerts.push({
+                const newAlert = {
                     id: `${currentTicker}-${Date.now()}`,
+                    kind: 'price',
                     ticker: currentTicker,
                     condition,
                     price: priceVal
-                });
+                };
+                priceAlerts.push(newAlert);
                 saveAlerts();
+                syncAlertToServer(newAlert);
                 document.getElementById('alertPriceInput').value = '';
 
                 const condText = condition === 'below' ? 'ต่ำกว่า' : 'สูงกว่า';
                 showToast(`ตั้งแจ้งเตือนราคา ${currentTicker} ${condText} $${priceVal} เรียบร้อยแล้ว`, 'info');
             } else if (currentAlertKind === 'signal') {
                 const targetSignal = document.getElementById('alertTargetSignal').value;
-                signalAlerts.push({
+                const newAlert = {
                     id: `${currentTicker}-sig-${Date.now()}`,
+                    kind: 'signal',
                     ticker: currentTicker,
                     targetSignal
-                });
+                };
+                signalAlerts.push(newAlert);
                 saveSignalAlerts();
+                syncAlertToServer(newAlert);
                 showToast(`ตั้งแจ้งเตือน ${currentTicker} เมื่อสัญญาณเปลี่ยนเป็น ${targetSignal} เรียบร้อยแล้ว`, 'info');
             } else {
                 // breakout
@@ -1595,11 +1710,14 @@
                     showToast(`ตั้งแจ้งเตือนทะลุแนวรับ/ต้านของ ${currentTicker} ไว้แล้วครับ`, 'alert');
                     return;
                 }
-                breakoutAlerts.push({
+                const newAlert = {
                     id: `${currentTicker}-brk-${Date.now()}`,
+                    kind: 'breakout',
                     ticker: currentTicker
-                });
+                };
+                breakoutAlerts.push(newAlert);
                 saveBreakoutAlerts();
+                syncAlertToServer(newAlert);
                 showToast(`ตั้งแจ้งเตือน ${currentTicker} เมื่อราคาทะลุแนวรับ/แนวต้านเรียบร้อยแล้ว`, 'info');
             }
 
@@ -1607,21 +1725,28 @@
             if ('Notification' in window && Notification.permission === 'default') {
                 Notification.requestPermission();
             }
+
+            if (!pushNotificationsEnabled()) {
+                showToast('เตือนความจำ: alert นี้จะทำงานเฉพาะตอนเปิดแอปอยู่ กด "เปิดใช้งานแจ้งเตือนพื้นหลัง" ในกระดิ่ง 🔔 ถ้าอยากให้เตือนได้แม้ปิดแอป', 'info');
+            }
         }
 
         function removeAlert(id) {
             priceAlerts = priceAlerts.filter(a => a.id !== id);
             saveAlerts();
+            removeAlertFromServer(id);
         }
 
         function removeSignalAlert(id) {
             signalAlerts = signalAlerts.filter(a => a.id !== id);
             saveSignalAlerts();
+            removeAlertFromServer(id);
         }
 
         function removeBreakoutAlert(id) {
             breakoutAlerts = breakoutAlerts.filter(a => a.id !== id);
             saveBreakoutAlerts();
+            removeAlertFromServer(id);
         }
 
         function toggleAlertPanel(event) {
@@ -2397,6 +2522,13 @@
             updateMarketStatus();
             setInterval(updateMarketStatus, 60000); // เช็คซ้ำทุก 1 นาที
             autoFetchScreenerOnLoad();
+            updatePushButtonState();
+
+            // ถ้าเคยเปิดใช้งานแจ้งเตือนพื้นหลังไว้แล้ว ลงทะเบียน Service Worker ใหม่เงียบๆ
+            // (ตัว subscription เดิมยังอยู่ฝั่งเบราว์เซอร์แล้ว ไม่ต้องขอสิทธิ์ซ้ำ)
+            if (pushNotificationsEnabled() && 'serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js').catch(() => {});
+            }
 
             // เผื่อเบราว์เซอร์บางตัว (พบมากใน iOS Safari) ไม่ repaint เนื้อหาให้ครบ
             // ตอนโหลดครั้งแรก จนกว่าจะมี event มาบังคับ (เช่น หมุนจอ) — บังคับ reflow เบาๆเอง

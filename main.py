@@ -1,12 +1,15 @@
 import asyncio
 import time
 import os
-from fastapi import FastAPI, Query
+import json
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from pywebpush import webpush, WebPushException
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = FastAPI()
 
@@ -27,6 +30,13 @@ app.add_middleware(
 def serve_frontend():
     index_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
     return FileResponse(index_path)
+
+# Service Worker ต้องเสิร์ฟจาก root scope ("/sw.js") ถึงจะควบคุมทั้งเว็บได้
+# (ถ้าอยู่ใต้โฟลเดอร์ย่อยจะควบคุมได้แค่โฟลเดอร์นั้น ไม่ครอบคลุมทั้งแอป)
+@app.get("/sw.js")
+def serve_service_worker():
+    sw_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sw.js")
+    return FileResponse(sw_path, media_type="application/javascript")
 
 STOCKS_TO_SCAN = [
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "AMD", "INTC",
@@ -502,6 +512,166 @@ async def run_screener_hold():
     result = {"hold_list": hold_list}
     cache_set(cache_key, result, SCREENER_CACHE_TTL)
     return result
+
+# ============================================================
+# ระบบแจ้งเตือนแบบ real-time (ทำงานได้แม้ไม่ได้เปิดแอปอยู่)
+# ใช้ Web Push Notification + ตัวเช็คราคาอัตโนมัติที่รันอยู่บน server ตลอดเวลา
+# ============================================================
+
+# VAPID keys สำหรับ Web Push (คู่กุญแจเข้ารหัสเฉพาะของแอปนี้ ไม่ใช่ความลับส่วนตัวของผู้ใช้)
+# หมายเหตุ: private key ควรเก็บเป็น environment variable ตอน deploy จริงจัง
+# แต่สำหรับแอปผู้ใช้คนเดียวแบบนี้ hardcode ไว้ก็ใช้งานได้ปลอดภัยเพียงพอ
+VAPID_PUBLIC_KEY = os.environ.get(
+    "VAPID_PUBLIC_KEY",
+    "BLd29jExwUWZ037xjzPjuosgO6zAgZh6tAb-A44jD931IrpNleKpbsy-zwji6fPav_chEKOFRUNMsbS4R5lYIKA"
+)
+VAPID_PRIVATE_KEY = os.environ.get(
+    "VAPID_PRIVATE_KEY",
+    "1jIvdGM6ajukgVoTN8t8Y1P8NIvOoqC3uFdCQ1cUnNI"
+)
+VAPID_CLAIMS = {"sub": "mailto:notify@tickr-app.local"}
+
+# เก็บ alert / push subscription ไว้ในหน่วยความจำ (เรียบง่ายสำหรับแอปผู้ใช้คนเดียว)
+# ⚠️ ข้อจำกัดสำคัญ: ข้อมูลจะหายไปถ้า Render restart/redeploy เพราะยังไม่ได้ต่อ database จริง
+# ถ้าอยากให้อยู่ถาวรข้าม restart ต้องเปลี่ยนไปเก็บใน database (เช่น Render Postgres ฟรี)
+server_alerts = []          # [{id, kind, ticker, condition, price, targetSignal}, ...]
+push_subscriptions = []     # [subscription_dict, ...] จาก browser PushManager
+
+
+@app.get("/push/vapid-public-key")
+def get_vapid_public_key():
+    return {"publicKey": VAPID_PUBLIC_KEY}
+
+
+@app.post("/push/subscribe")
+async def subscribe_push(request: Request):
+    sub = await request.json()
+    # กันเพิ่มซ้ำถ้าเบราว์เซอร์เดิม subscribe มาหลายรอบ (เทียบจาก endpoint ซึ่ง unique ต่ออุปกรณ์/เบราว์เซอร์)
+    existing_endpoints = [s.get("endpoint") for s in push_subscriptions]
+    if sub.get("endpoint") not in existing_endpoints:
+        push_subscriptions.append(sub)
+    return {"status": "subscribed", "total_subscriptions": len(push_subscriptions)}
+
+
+@app.post("/alerts")
+async def create_server_alert(request: Request):
+    data = await request.json()
+    if not data.get("id"):
+        data["id"] = f"{data.get('ticker', 'UNKNOWN')}-{int(time.time() * 1000)}"
+    # กันตั้งซ้ำถ้า id เดิมมีอยู่แล้ว (เผื่อ frontend ยิงซ้ำ)
+    server_alerts[:] = [a for a in server_alerts if a.get("id") != data["id"]]
+    server_alerts.append(data)
+    return {"status": "created", "alert": data}
+
+
+@app.get("/alerts")
+def list_server_alerts():
+    return {"alerts": server_alerts}
+
+
+@app.delete("/alerts/{alert_id}")
+def delete_server_alert(alert_id: str):
+    server_alerts[:] = [a for a in server_alerts if a.get("id") != alert_id]
+    return {"status": "deleted"}
+
+
+def send_push_to_all(title: str, body: str):
+    """ส่ง Web Push ไปทุกอุปกรณ์ที่เคย subscribe ไว้ ถ้า subscription ไหนหมดอายุ/ถูกยกเลิกจะลบทิ้งอัตโนมัติ"""
+    still_valid = []
+    for sub in push_subscriptions:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=json.dumps({"title": title, "body": body}),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims=dict(VAPID_CLAIMS)
+            )
+            still_valid.append(sub)
+        except WebPushException:
+            # subscription หมดอายุ หรือผู้ใช้ปิดสิทธิ์แจ้งเตือนไปแล้ว -> เอาออกจากลิสต์เงียบๆ
+            continue
+    push_subscriptions[:] = still_valid
+
+
+def check_server_alerts_job():
+    """ทำงานเป็นระยะๆบน server เอง (ไม่ต้องพึ่งเบราว์เซอร์เปิดอยู่) เช็ค alert ทุกตัวที่ตั้งไว้"""
+    if not server_alerts or not push_subscriptions:
+        return
+
+    try:
+        tickers_needed = list({a["ticker"] for a in server_alerts if a.get("ticker")})
+        analysis_map = {}
+
+        for ticker in tickers_needed:
+            try:
+                stock = yf.Ticker(ticker)
+                df = stock.history(period="3mo", interval="1d")
+                if df.empty:
+                    continue
+                analysis_map[ticker] = (calculate_levels_and_signal(df), df)
+            except Exception:
+                continue
+
+        remaining = []
+        for alert in server_alerts:
+            ticker = alert.get("ticker")
+            entry = analysis_map.get(ticker)
+            if not entry:
+                remaining.append(alert)
+                continue
+            analysis, df = entry
+
+            triggered = False
+            message = ""
+            price = analysis["current_price"]
+            kind = alert.get("kind")
+
+            if kind == "price":
+                condition = alert.get("condition")
+                target_price = alert.get("price")
+                cond_text = "ต่ำกว่า" if condition == "below" else "สูงกว่า"
+                if condition == "below" and price <= target_price:
+                    triggered = True
+                elif condition == "above" and price >= target_price:
+                    triggered = True
+                if triggered:
+                    message = f"{ticker} ถึงเงื่อนไขแล้ว: ราคาปัจจุบัน ${price} (ตั้งไว้ {cond_text} ${target_price})"
+
+            elif kind == "signal":
+                target_signal = alert.get("targetSignal")
+                if analysis["signal"] == target_signal:
+                    triggered = True
+                    message = f"{ticker} เปลี่ยนสัญญาณเป็น {analysis['signal']} แล้ว!"
+
+            elif kind == "breakout":
+                # ใช้นิยาม breakout ที่ตรงไปตรงมาที่สุด: ราคาปิดวันนี้ทะลุจุดสูงสุด/ต่ำสุด
+                # ของ "ทุกวันก่อนหน้า" ในช่วงที่ดูอยู่ (ไม่รวมวันนี้เอง) แทนที่จะอิงจาก index
+                # ของ array แนวรับ-แนวต้าน ซึ่งอาจเป็นค่าจริงหรือค่าประมาณการปนกันไม่แน่นอน
+                if len(df) > 1:
+                    prior_high = float(df['High'].iloc[:-1].max())
+                    prior_low = float(df['Low'].iloc[:-1].min())
+                    if price > prior_high:
+                        triggered = True
+                        message = f"{ticker} ทะลุจุดสูงสุดเดิมแล้ว! ราคา ${price} (จุดสูงสุดก่อนหน้า ${round(prior_high, 2)})"
+                    elif price < prior_low:
+                        triggered = True
+                        message = f"{ticker} หลุดจุดต่ำสุดเดิมแล้ว! ราคา ${price} (จุดต่ำสุดก่อนหน้า ${round(prior_low, 2)})"
+
+            if triggered:
+                send_push_to_all(f"🔔 {ticker}", message)
+            else:
+                remaining.append(alert)
+
+        server_alerts[:] = remaining
+    except Exception as e:
+        print("check_server_alerts_job error:", repr(e))
+
+
+# ตัวเช็คอัตโนมัติทำงานทุก 5 นาที บน server เอง ไม่ต้องพึ่งเบราว์เซอร์เปิดค้างไว้เลย
+scheduler = BackgroundScheduler()
+scheduler.add_job(check_server_alerts_job, "interval", minutes=5)
+scheduler.start()
+
 
 if __name__ == "__main__":
     import uvicorn

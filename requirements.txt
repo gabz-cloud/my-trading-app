@@ -3,3 +3,5 @@ uvicorn[standard]
 yfinance
 pandas
 numpy
+pywebpush
+apscheduler
