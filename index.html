@@ -636,6 +636,18 @@
         .detail-left { display: flex; flex-direction: column; }
         .detail-right { display: flex; flex-direction: column; }
 
+        .btn-back {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+        .btn-back:hover { border-color: var(--accent-teal); color: var(--accent-teal); }
+
         .stock-header {
             display: flex;
             align-items: center;
@@ -1240,60 +1252,13 @@
 
     <div class="page">
 
-        <div id="mobileViewHome" class="mobile-view active">
-        <section class="hero card">
-            <h1>ระบบวิเคราะห์และคัดกรองหุ้น</h1>
-            <p class="subtitle">ค้นหาหุ้นรายตัว ดูแนวรับแนวต้าน หรือสแกนสัญญาณซื้อขายทั่วตลาดได้ในที่เดียว</p>
-
-            <div class="search-bar-row">
-                <div class="input-wrap">
-                    <span class="input-icon">🔍</span>
-                    <input type="text" id="tickerInput" placeholder="ใส่ชื่อหุ้น เช่น AAPL, TSLA, NVDA">
-                </div>
-                <button class="btn-search" onclick="searchStock()">ค้นหา</button>
-
-                <select id="screenerMode" class="screener-mode-select">
-                    <option value="buy">🔥 Mode: BUY (เทคนิคคอล)</option>
-                    <option value="hold">💎 Mode: HOLD (ออมยาว)</option>
-                </select>
-                <button class="btn-screener" onclick="runScreener()">สแกนหุ้น</button>
-            </div>
-
-            <div id="recentlyViewedRow" class="recently-viewed-row"></div>
-        </section>
-
-        <section id="dailyDigestCard" class="card daily-digest-card" style="display:none;">
-            <div class="digest-header">
-                <div class="digest-title">📋 สรุปประจำวัน — <span id="digestDate"></span></div>
-                <button class="digest-close-btn" onclick="dismissDailyDigest()" aria-label="ปิดสรุปประจำวัน">✕</button>
-            </div>
-            <div class="digest-stats">
-                <div class="digest-stat">
-                    <div class="digest-stat-value" id="digestBuyCount">-</div>
-                    <div class="digest-stat-label">🔥 BUY จากสแกนล่าสุด</div>
-                </div>
-                <div class="digest-stat">
-                    <div class="digest-stat-value" id="digestHoldCount">-</div>
-                    <div class="digest-stat-label">💎 HOLD จากสแกนล่าสุด</div>
-                </div>
-                <div class="digest-stat">
-                    <div class="digest-stat-value" id="digestAlertCount">-</div>
-                    <div class="digest-stat-label">🔔 แจ้งเตือนวันนี้</div>
-                </div>
-            </div>
-            <div id="digestFavBuySection" class="digest-fav-section" style="display:none;">
-                <div class="digest-fav-title">⭐ รายการโปรดที่เป็น BUY ตอนนี้:</div>
-                <div id="digestFavList" class="digest-fav-list"></div>
-            </div>
-        </section>
-        </div>
-
         <div id="mobileViewStock" class="mobile-view">
         <div id="stockViewEmptyState" class="stock-view-empty show">
             <div class="stock-view-empty-icon">📈</div>
-            <div>ยังไม่ได้เลือกหุ้นครับ ลองค้นหาจากหน้า "หน้าแรก" ดูก่อนได้เลย</div>
+            <div>ยังไม่ได้เลือกหุ้นครับ ลองเลือกจากแท็บ "สแกน" ดูก่อนได้เลย</div>
         </div>
         <section id="resultBox" class="result-box card">
+            <button class="btn-back" onclick="goBackFromStock()" aria-label="กลับไปหน้าสแกน">← กลับ</button>
 
             <div class="stock-detail">
                 <div class="detail-left">
@@ -1431,10 +1396,52 @@
         </section>
         </div>
 
-        <div id="mobileViewScreener" class="mobile-view">
+        <div id="mobileViewScreener" class="mobile-view active">
+        <section class="hero card">
+            <h1>ระบบวิเคราะห์และคัดกรองหุ้น</h1>
+            <p class="subtitle">แอปสแกนสัญญาณซื้อขายให้อัตโนมัติทุกครั้งที่เข้ามา หรือค้นหาหุ้นรายตัวได้เลย</p>
+
+            <div class="search-bar-row">
+                <div class="input-wrap">
+                    <span class="input-icon">🔍</span>
+                    <input type="text" id="tickerInput" placeholder="ใส่ชื่อหุ้น เช่น AAPL, TSLA, NVDA">
+                </div>
+                <button class="btn-search" onclick="searchStock()">ค้นหา</button>
+                <button class="btn-screener" onclick="refreshScan()">🔄 รีเฟรช</button>
+            </div>
+
+            <div id="recentlyViewedRow" class="recently-viewed-row"></div>
+        </section>
+
+        <section id="dailyDigestCard" class="card daily-digest-card" style="display:none;">
+            <div class="digest-header">
+                <div class="digest-title">📋 สรุปประจำวัน — <span id="digestDate"></span></div>
+                <button class="digest-close-btn" onclick="dismissDailyDigest()" aria-label="ปิดสรุปประจำวัน">✕</button>
+            </div>
+            <div class="digest-stats">
+                <div class="digest-stat">
+                    <div class="digest-stat-value" id="digestBuyCount">-</div>
+                    <div class="digest-stat-label">🔥 BUY จากสแกนล่าสุด</div>
+                </div>
+                <div class="digest-stat">
+                    <div class="digest-stat-value" id="digestHoldCount">-</div>
+                    <div class="digest-stat-label">💎 HOLD จากสแกนล่าสุด</div>
+                </div>
+                <div class="digest-stat">
+                    <div class="digest-stat-value" id="digestAlertCount">-</div>
+                    <div class="digest-stat-label">🔔 แจ้งเตือนวันนี้</div>
+                </div>
+            </div>
+            <div id="digestFavBuySection" class="digest-fav-section" style="display:none;">
+                <div class="digest-fav-title">⭐ รายการโปรดที่เป็น BUY ตอนนี้:</div>
+                <div id="digestFavList" class="digest-fav-list"></div>
+            </div>
+        </section>
+
         <section id="screenerWrapper" class="card">
             <div class="market-tabs">
-                <div id="tab-all" class="tab-item active" role="tab" tabindex="0" aria-selected="true" onclick="switchTab('all')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('all');}">🔥 ทั้งหมด (สแกนเทคนิคคอล)</div>
+                <div id="tab-buy" class="tab-item active" role="tab" tabindex="0" aria-selected="true" onclick="switchTab('buy')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('buy');}">🔥 BUY (เทคนิคคอล)</div>
+                <div id="tab-hold" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('hold')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('hold');}">💎 HOLD (ออมยาว)</div>
                 <div id="tab-fav" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('fav')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('fav');}">⭐ ชื่นชอบ</div>
             </div>
 
@@ -1506,14 +1513,11 @@
     </div>
 
     <nav class="mobile-tab-bar" aria-label="เมนูหลัก">
-        <button type="button" id="tabBtnHome" class="mobile-tab-btn active" onclick="switchMobileView('home')">
-            <span class="tab-icon">🔍</span><span>หน้าแรก</span>
+        <button type="button" id="tabBtnScreener" class="mobile-tab-btn active" onclick="switchMobileView('screener')">
+            <span class="tab-icon">📋</span><span>สแกน</span>
         </button>
         <button type="button" id="tabBtnStock" class="mobile-tab-btn" onclick="switchMobileView('stock')">
             <span class="tab-icon">📈</span><span>หุ้น</span>
-        </button>
-        <button type="button" id="tabBtnScreener" class="mobile-tab-btn" onclick="switchMobileView('screener')">
-            <span class="tab-icon">📋</span><span>สแกน</span>
         </button>
     </nav>
 
@@ -1529,7 +1533,7 @@
         let currentChart = null;
         let currentTicker = "";
         let currentTimeframe = "1d";
-        let currentTab = "all";
+        let currentTab = "buy";
         let isFirstLoadLoading = true;
 
         let latestScreenerData = [];
@@ -2833,9 +2837,9 @@
         }
 
         // ========= สลับหน้าแบบแท็บ (เฉพาะจอมือถือ — บนจอใหญ่ทุกอย่างยังโชว์พร้อมกันเหมือนเดิม) =========
-        let currentMobileView = 'home';
-        const MOBILE_VIEW_IDS = { home: 'mobileViewHome', stock: 'mobileViewStock', screener: 'mobileViewScreener' };
-        const MOBILE_TAB_BTN_IDS = { home: 'tabBtnHome', stock: 'tabBtnStock', screener: 'tabBtnScreener' };
+        let currentMobileView = 'screener';
+        const MOBILE_VIEW_IDS = { stock: 'mobileViewStock', screener: 'mobileViewScreener' };
+        const MOBILE_TAB_BTN_IDS = { stock: 'tabBtnStock', screener: 'tabBtnScreener' };
 
         function switchMobileView(view) {
             currentMobileView = view;
@@ -2846,6 +2850,12 @@
             document.getElementById(MOBILE_TAB_BTN_IDS[view]).classList.add('active');
 
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ปุ่ม "← กลับ" ในหน้ารายละเอียดหุ้น — กลับไปหน้าสแกนโดยไม่ต้องค้นหาใหม่
+        // (ข้อมูลหุ้นที่เพิ่งดูยังอยู่ใน resultBox เหมือนเดิม แค่สลับมุมมองกลับไป)
+        function goBackFromStock() {
+            switchMobileView('screener');
         }
 
         function updateStockViewEmptyState() {
@@ -3028,19 +3038,19 @@
             renderTable();
         }
 
-        // แปลงข้อมูลของทั้ง 2 แท็บ (ทั้งหมด / ชื่นชอบ) ให้อยู่ในรูปแบบเดียวกัน
-        // เพื่อให้ filter/sort ใช้โค้ดชุดเดียวกันได้ ไม่ต้องแยกเขียน 2 รอบ
+        // แปลงข้อมูลของทั้ง 3 แท็บ (BUY / HOLD / ชื่นชอบ) ให้อยู่ในรูปแบบเดียวกัน
+        // เพื่อให้ filter/sort ใช้โค้ดชุดเดียวกันได้ ไม่ต้องแยกเขียน 3 รอบ
         function buildRowsData() {
-            const activeBadge = currentScreenerType === 'hold'
-                ? `<span class="badge-hold">HOLD</span>`
-                : `<span class="badge-buy">BUY</span>`;
-            const activeSignalText = currentScreenerType === 'hold' ? 'HOLD' : 'BUY';
+            const badgeForSignal = (signal) => signal === 'BUY'
+                ? `<span class="badge-buy">BUY</span>`
+                : `<span class="badge-hold">HOLD</span>`;
 
             if (currentTab === 'fav') {
                 return favoriteStocks.map(ticker => {
                     const matchedStock = latestScreenerData.find(s => s.ticker === ticker);
                     if (matchedStock) {
                         const lastSupport = matchedStock.supports[matchedStock.supports.length - 1];
+                        const signal = matchedStock.signal || 'HOLD';
                         return {
                             ticker,
                             price: typeof matchedStock.current_price === 'number' ? matchedStock.current_price : null,
@@ -3049,8 +3059,8 @@
                             supportDisplay: `$${lastSupport}`,
                             change: typeof matchedStock.change === 'number' ? matchedStock.change : null,
                             changePercent: typeof matchedStock.change_percent === 'number' ? matchedStock.change_percent : null,
-                            badgeHtml: activeBadge,
-                            signalText: activeSignalText
+                            badgeHtml: badgeForSignal(signal),
+                            signalText: signal
                         };
                     }
                     return {
@@ -3063,20 +3073,24 @@
                 });
             }
 
-            return (latestScreenerData || []).map(stock => {
-                const lastSupport = stock.supports[stock.supports.length - 1];
-                return {
-                    ticker: stock.ticker,
-                    price: typeof stock.current_price === 'number' ? stock.current_price : null,
-                    support: typeof lastSupport === 'number' ? lastSupport : null,
-                    priceDisplay: `$${stock.current_price}`,
-                    supportDisplay: `$${lastSupport}`,
-                    change: typeof stock.change === 'number' ? stock.change : null,
-                    changePercent: typeof stock.change_percent === 'number' ? stock.change_percent : null,
-                    badgeHtml: activeBadge,
-                    signalText: activeSignalText
-                };
-            });
+            // แท็บ buy / hold: กรองจากสัญญาณจริงของแต่ละหุ้น (มาจากการสแกนทั้งตลาดครั้งเดียว ไม่ต้องยิง API แยก)
+            const targetSignal = currentTab === 'hold' ? 'HOLD' : 'BUY';
+            return (latestScreenerData || [])
+                .filter(stock => stock.signal === targetSignal)
+                .map(stock => {
+                    const lastSupport = stock.supports[stock.supports.length - 1];
+                    return {
+                        ticker: stock.ticker,
+                        price: typeof stock.current_price === 'number' ? stock.current_price : null,
+                        support: typeof lastSupport === 'number' ? lastSupport : null,
+                        priceDisplay: `$${stock.current_price}`,
+                        supportDisplay: `$${lastSupport}`,
+                        change: typeof stock.change === 'number' ? stock.change : null,
+                        changePercent: typeof stock.change_percent === 'number' ? stock.change_percent : null,
+                        badgeHtml: badgeForSignal(targetSignal),
+                        signalText: targetSignal
+                    };
+                });
         }
 
         function applyFilterAndSort(rows) {
@@ -3161,7 +3175,7 @@
                 r.signalText
             ]);
 
-            const tabLabel = currentTab === 'fav' ? 'favorites' : 'all';
+            const tabLabel = currentTab; // 'buy' | 'hold' | 'fav'
             downloadCsv(`stock-screener-${tabLabel}-${getDateStampForFilename()}.csv`, headers, csvRows);
             showToast(`ส่งออก ${rows.length} รายการเป็น CSV เรียบร้อยแล้ว`, 'info');
         }
@@ -3206,13 +3220,13 @@
             if (isFirstLoadLoading) return;
 
             if (currentTab === 'fav' && favoriteStocks.length === 0) {
-                const msg = 'ยังไม่มีหุ้นที่ชื่นชอบในรายการครับ สามารถเลือกติดดาวหุ้นที่สนใจไว้ได้จากแท็บ "ทั้งหมด" ครับ';
+                const msg = 'ยังไม่มีหุ้นที่ชื่นชอบในรายการครับ สามารถเลือกติดดาวหุ้นที่สนใจไว้ได้จากแท็บ "BUY" หรือ "HOLD" ครับ';
                 tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">${msg}</td></tr>`;
                 if (mobileList) mobileList.innerHTML = `<div class="news-empty">${msg}</div>`;
                 return;
             }
-            if (currentTab === 'all' && (!latestScreenerData || latestScreenerData.length === 0)) {
-                const msg = 'ไม่พบข้อมูลหุ้นในขณะนี้ครับ';
+            if ((currentTab === 'buy' || currentTab === 'hold') && (!latestScreenerData || latestScreenerData.length === 0)) {
+                const msg = 'กำลังสแกนข้อมูลหุ้นอยู่ครับ รอสักครู่ หรือกด "รีเฟรช" อีกครั้ง';
                 tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">${msg}</td></tr>`;
                 if (mobileList) mobileList.innerHTML = `<div class="news-empty">${msg}</div>`;
                 return;
@@ -3298,32 +3312,21 @@
         }
 
         // ฟังก์ชันสแกนปุ่มหลัก: ตรวจสอบโหมดจาก Dropdown ก่อนยิง API
-        async function runScreener() {
-            const mode = document.getElementById('screenerMode').value;
-            currentScreenerType = mode;
+        // ปุ่ม "🔄 รีเฟรช" — ดึงข้อมูลสแกนทั้งตลาดใหม่ (ทั้ง BUY และ HOLD มาในคำขอเดียว ไม่ต้องเลือกโหมดเอง)
+        async function refreshScan() {
             switchMobileView('screener');
-
-            // อัปเดตข้อความบนหัวแท็บให้เหมาะสมกับโหมดที่กำลังสแกน
-            if (mode === 'buy') {
-                document.getElementById('tab-all').innerText = "🔥 ทั้งหมด (สแกนเทคนิคคอล)";
-            } else {
-                document.getElementById('tab-all').innerText = "💎 ทั้งหมด (สแกนออมหุ้น/ถือยาว)";
-            }
-
             toggleOverlay(true);
             try {
-                // เลือกยิง Endpoint ตามโหมดที่เลือกจาก Dropdown
-                const endpoint = mode === 'buy' ? `${API_BASE}/screener` : `${API_BASE}/screener-hold`;
-                const response = await fetch(endpoint);
+                const response = await fetch(`${API_BASE}/get-all-stocks`);
                 const data = await response.json();
-
-                // รองรับ Key ทั้งแบบเก่าและแบบใหม่จาก API ของบอส
-                latestScreenerData = data.buy_list || data.hold_list || [];
+                latestScreenerData = data.stocks || [];
                 renderTickerTape(latestScreenerData);
                 checkAlerts(buildPriceMap(latestScreenerData));
                 checkSignalAlerts(buildSignalMap(latestScreenerData));
                 checkBreakoutAlerts(buildBreakoutMap(latestScreenerData));
-                switchTab('all');
+                renderDailyDigest(true);
+                renderTable();
+                showToast('รีเฟรชข้อมูลเรียบร้อยแล้ว', 'info');
             } catch (error) {
                 showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert');
             } finally {
