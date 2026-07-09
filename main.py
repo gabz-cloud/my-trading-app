@@ -107,7 +107,9 @@ async def get_all_stocks():
                     "ticker": ticker,
                     "current_price": analysis["current_price"],
                     "supports": analysis["supports"],
-                    "signal": analysis["signal"]
+                    "signal": analysis["signal"],
+                    "change": analysis.get("change"),
+                    "change_percent": analysis.get("change_percent")
                 }
 
             except Exception:
@@ -241,6 +243,8 @@ def calculate_levels_and_signal(df):
             "resistances_is_real": [],
             "signal": "HOLD",
             "current_price": 0,
+            "change": None,
+            "change_percent": None,
             "rsi": None,
             "macd": None,
             "macd_signal": None,
@@ -250,6 +254,15 @@ def calculate_levels_and_signal(df):
     last_close = float(close.iloc[-1])
     max_high = float(high.max()) if not high.empty else last_close
     min_low = float(low.min()) if not low.empty else last_close
+
+    # ===== เปลี่ยนแปลงจากราคาปิดวันก่อนหน้า (เทียบกับแท่งก่อนหน้าล่าสุดใน timeframe ที่ดูอยู่) =====
+    if len(close) >= 2:
+        prev_close = float(close.iloc[-2])
+        change = round(last_close - prev_close, 2)
+        change_percent = round((change / prev_close) * 100, 2) if prev_close != 0 else 0.0
+    else:
+        change = None
+        change_percent = None
 
     # ===== แนวรับ-แนวต้าน: ใช้ Swing High/Low จริงเป็นหลัก (ราคาที่เคยเกิดขึ้นจริง)
     # เติมด้วยสูตร ±% เดิมเฉพาะตอนหา swing point จริงไม่ครบ 3 ระดับ =====
@@ -268,6 +281,8 @@ def calculate_levels_and_signal(df):
             "resistances_is_real": resistances_is_real,
             "signal": "HOLD",
             "current_price": round(last_close, 2),
+            "change": change,
+            "change_percent": change_percent,
             "rsi": None,
             "macd": None,
             "macd_signal": None,
@@ -300,6 +315,8 @@ def calculate_levels_and_signal(df):
         "resistances_is_real": resistances_is_real,
         "signal": signal,
         "current_price": round(last_close, 2),
+        "change": change,
+        "change_percent": change_percent,
         "rsi": round(float(rsi_latest), 2) if pd.notna(rsi_latest) else None,
         "macd": round(float(macd_latest), 4) if pd.notna(macd_latest) else None,
         "macd_signal": round(float(macd_signal_latest), 4) if pd.notna(macd_signal_latest) else None,
@@ -325,7 +342,9 @@ async def fetch_single_stock_buy(ticker, semaphore):
                     "ticker": ticker,
                     "current_price": analysis["current_price"],
                     "supports": analysis["supports"],
-                    "resistances": analysis["resistances"]
+                    "resistances": analysis["resistances"],
+                    "change": analysis.get("change"),
+                    "change_percent": analysis.get("change_percent")
                 }
         except Exception:
             pass
@@ -351,7 +370,9 @@ async def fetch_single_stock_hold(ticker, semaphore):
                     "ticker": ticker,
                     "current_price": analysis["current_price"],
                     "supports": analysis["supports"],
-                    "resistances": analysis["resistances"]
+                    "resistances": analysis["resistances"],
+                    "change": analysis.get("change"),
+                    "change_percent": analysis.get("change_percent")
                 }
         except Exception:
             pass
@@ -402,6 +423,8 @@ def get_stock_data(ticker: str, tf: str = "1d"):
         result = {
             "ticker": ticker_upper,
             "current_price": analysis["current_price"],
+            "change": analysis.get("change"),
+            "change_percent": analysis.get("change_percent"),
             "signal": f'{analysis["signal"]} (TF: 1D)',
             "supports": analysis["supports"],
             "resistances": analysis["resistances"],

@@ -835,6 +835,8 @@
         .news-item:hover { border-color: var(--accent-teal); }
         .news-item-title { font-size: 13.5px; font-weight: 600; line-height: 1.4; }
         .news-sentiment-badge { margin-right: 2px; cursor: help; }
+        .news-translated-note { font-size: 10.5px; font-weight: 500; color: var(--text-muted); }
+        .news-title-text { cursor: help; }
         .news-item-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; }
 
         /* ===== Compare mode ===== */
@@ -1052,6 +1054,8 @@
         .mobile-tab-btn.active { color: var(--accent-teal); }
         .stock-view-empty { display: none; }
 
+        .mobile-stock-list { display: none; }
+
         @media (max-width: 900px) {
             .topbar { padding: 12px 18px; }
             .page { padding: 22px 16px 90px; }
@@ -1082,6 +1086,35 @@
                 line-height: 1.6;
             }
             .stock-view-empty-icon { font-size: 42px; opacity: 0.5; }
+
+            /* ตารางสแกน: ซ่อน <table> เดิม โชว์การ์ดลิสต์แบบแอปหุ้นแทนบนมือถือ */
+            .table-scroll-container { display: none; }
+            .mobile-stock-list { display: block; }
+
+            .mobile-stock-card {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 14px 4px;
+                border-bottom: 1px solid var(--border-color);
+                cursor: pointer;
+            }
+            .mobile-stock-card:last-child { border-bottom: none; }
+            .msc-star {
+                background: none; border: none; font-size: 19px; padding: 4px;
+                flex-shrink: 0; color: var(--accent-gold);
+            }
+            .msc-info { flex: 1; min-width: 0; }
+            .msc-ticker-row { display: flex; align-items: center; gap: 6px; }
+            .msc-ticker { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 15.5px; }
+            .msc-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11.5px; color: var(--text-muted); }
+            .msc-meta .badge-buy, .msc-meta .badge-hold, .msc-meta .badge-fav { padding: 2px 8px; font-size: 10px; }
+            .msc-right { text-align: right; flex-shrink: 0; }
+            .msc-price { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16.5px; }
+            .msc-change { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; margin-top: 3px; }
+            .msc-change.up { color: var(--up-color); }
+            .msc-change.down { color: var(--down-color); }
+            .msc-change.flat { color: var(--text-muted); }
         }
 
         /* ===== จอมือถือแคบ (พอร์เทรต) ===== */
@@ -1386,7 +1419,7 @@
                     aria-expanded="true" aria-controls="newsListWrap" aria-label="ย่อ/ขยายรายการข่าวล่าสุด"
                     onclick="toggleNewsSection()"
                     onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleNewsSection();}">
-                    <span class="news-section-title">📰 ข่าวล่าสุด</span>
+                    <span class="news-section-title">📰 ข่าวล่าสุด <span class="news-translated-note">(แปลไทยอัตโนมัติ)</span></span>
                     <span id="newsToggleIcon" class="news-toggle-icon">▲</span>
                 </div>
                 <div id="newsListWrap" class="news-list-wrap">
@@ -1434,6 +1467,8 @@
                     </tbody>
                 </table>
             </div>
+
+            <div id="mobileStockList" class="mobile-stock-list"></div>
         </section>
 
         <section id="compareSection" class="card" style="display:none;">
@@ -2231,6 +2266,50 @@
             return '⚪';
         }
 
+        // ========= แปลหัวข้อข่าวเป็นไทยอัตโนมัติ =========
+        // ใช้ Google Translate (แบบ AI แปลตามความหมาย ไม่ใช่จับคู่วลีตรงตัวแบบเดิม) เป็นหลัก
+        // เพราะให้ภาษาไทยที่อ่านเป็นธรรมชาติกว่า MyMemory เยอะ โดยเฉพาะกับหัวข้อข่าวที่ใช้สำนวน
+        // หมายเหตุ: เป็น endpoint แบบไม่เป็นทางการ (ไม่มี API key, ฟรี) อาจหยุดทำงานได้โดยไม่แจ้งล่วงหน้า
+        // ถ้าเกิดปัญหาจะ fallback ไปใช้ MyMemory แทนอัตโนมัติ (แปลตรงตัวกว่า แต่ยังพอสื่อความได้)
+        // เก็บ cache ไว้ในหน่วยความจำระหว่าง session กันแปลซ้ำถ้าเจอหัวข้อเดิม (เช่น สลับดูหุ้นตัวเดิมไปมา)
+        const translationCache = new Map();
+
+        async function translateViaGoogle(text) {
+            const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&q=${encodeURIComponent(text)}`);
+            const data = await res.json();
+            const segments = data && data[0];
+            if (!segments) throw new Error('unexpected response shape');
+            return segments.map(seg => seg[0]).join('').trim();
+        }
+
+        async function translateViaMyMemory(text) {
+            const q = text.slice(0, 480); // MyMemory จำกัดความยาวต่อ request ไว้ที่ ~500 ตัวอักษร
+            const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=en|th`);
+            const data = await res.json();
+            const translated = data && data.responseData && data.responseData.translatedText;
+            if (!translated || !translated.trim()) throw new Error('empty translation');
+            return translated.trim();
+        }
+
+        async function translateToThai(text) {
+            if (!text) return text;
+            if (translationCache.has(text)) return translationCache.get(text);
+
+            let result = text; // สุดท้ายถ้าแปลไม่ได้เลยทั้งคู่ ใช้ต้นฉบับแทน ดีกว่าไม่มีอะไรโชว์
+            try {
+                result = await translateViaGoogle(text);
+            } catch (e) {
+                try {
+                    result = await translateViaMyMemory(text);
+                } catch (e2) {
+                    console.error('translate failed (ทั้งสองทาง):', e, e2);
+                }
+            }
+
+            translationCache.set(text, result);
+            return result;
+        }
+
         function renderNewsList(newsItems) {
             const list = document.getElementById('newsList');
             if (!newsItems || newsItems.length === 0) {
@@ -2238,16 +2317,24 @@
                 return;
             }
 
-            list.innerHTML = newsItems.map(item => {
+            // แสดงหัวข้อภาษาอังกฤษไปก่อนทันที (ไม่ต้องรอแปล) แล้วค่อยสลับเป็นไทยเมื่อแปลเสร็จ
+            list.innerHTML = newsItems.map((item, idx) => {
                 const sentiment = classifyNewsSentiment(item.title);
                 return `<a class="news-item" href="${item.link || '#'}" target="_blank" rel="noopener noreferrer">
                     <div class="news-item-title">
                         <span class="news-sentiment-badge" title="แนวโน้มคร่าวๆจากการจับคำสำคัญในหัวข้อข่าว ไม่ใช่การวิเคราะห์เชิงลึก">${sentimentBadge(sentiment)}</span>
-                        ${item.title}
+                        <span id="newsTitle-${idx}" class="news-title-text" title="ต้นฉบับ: ${item.title.replace(/"/g, '&quot;')}">${item.title}</span>
                     </div>
                     <div class="news-item-meta">${item.publisher || ''}</div>
                 </a>`;
             }).join('');
+
+            newsItems.forEach((item, idx) => {
+                translateToThai(item.title).then(thaiText => {
+                    const el = document.getElementById(`newsTitle-${idx}`);
+                    if (el && thaiText) el.innerText = thaiText;
+                });
+            });
         }
 
         // ========= RSI / MACD indicator display =========
@@ -2960,6 +3047,8 @@
                             support: typeof lastSupport === 'number' ? lastSupport : null,
                             priceDisplay: `$${matchedStock.current_price}`,
                             supportDisplay: `$${lastSupport}`,
+                            change: typeof matchedStock.change === 'number' ? matchedStock.change : null,
+                            changePercent: typeof matchedStock.change_percent === 'number' ? matchedStock.change_percent : null,
                             badgeHtml: activeBadge,
                             signalText: activeSignalText
                         };
@@ -2967,6 +3056,7 @@
                     return {
                         ticker, price: null, support: null,
                         priceDisplay: '-', supportDisplay: '-',
+                        change: null, changePercent: null,
                         badgeHtml: `<span class="badge-fav">FAV</span>`,
                         signalText: 'FAV'
                     };
@@ -2981,6 +3071,8 @@
                     support: typeof lastSupport === 'number' ? lastSupport : null,
                     priceDisplay: `$${stock.current_price}`,
                     supportDisplay: `$${lastSupport}`,
+                    change: typeof stock.change === 'number' ? stock.change : null,
+                    changePercent: typeof stock.change_percent === 'number' ? stock.change_percent : null,
                     badgeHtml: activeBadge,
                     signalText: activeSignalText
                 };
@@ -3108,25 +3200,34 @@
 
         function renderTable() {
             const tbody = document.getElementById('tableRows');
+            const mobileList = document.getElementById('mobileStockList');
             tbody.innerHTML = '';
 
             if (isFirstLoadLoading) return;
 
             if (currentTab === 'fav' && favoriteStocks.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">ยังไม่มีหุ้นที่ชื่นชอบในรายการครับ สามารถเลือกติดดาวหุ้นที่สนใจไว้ได้จากแท็บ "ทั้งหมด" ครับ</td></tr>`;
+                const msg = 'ยังไม่มีหุ้นที่ชื่นชอบในรายการครับ สามารถเลือกติดดาวหุ้นที่สนใจไว้ได้จากแท็บ "ทั้งหมด" ครับ';
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">${msg}</td></tr>`;
+                if (mobileList) mobileList.innerHTML = `<div class="news-empty">${msg}</div>`;
                 return;
             }
             if (currentTab === 'all' && (!latestScreenerData || latestScreenerData.length === 0)) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">ไม่พบข้อมูลหุ้นในขณะนี้ครับ</td></tr>`;
+                const msg = 'ไม่พบข้อมูลหุ้นในขณะนี้ครับ';
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">${msg}</td></tr>`;
+                if (mobileList) mobileList.innerHTML = `<div class="news-empty">${msg}</div>`;
                 return;
             }
 
             const rows = applyFilterAndSort(buildRowsData());
 
             if (rows.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">ไม่พบหุ้นที่ตรงกับตัวกรองครับ ลองปรับช่วงราคาหรือคำค้นหาดูใหม่</td></tr>`;
+                const msg = 'ไม่พบหุ้นที่ตรงกับตัวกรองครับ ลองปรับช่วงราคาหรือคำค้นหาดูใหม่';
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 30px 10px;">${msg}</td></tr>`;
+                if (mobileList) mobileList.innerHTML = `<div class="news-empty">${msg}</div>`;
                 return;
             }
+
+            let mobileHtml = '';
 
             rows.forEach((row, index) => {
                 const isFav = favoriteStocks.includes(row.ticker);
@@ -3154,7 +3255,39 @@
                     <td>${row.badgeHtml}</td>
                 </tr>`;
                 tbody.innerHTML += rowHtml;
+
+                mobileHtml += buildMobileStockCardHtml(row, isFav);
             });
+
+            if (mobileList) mobileList.innerHTML = mobileHtml;
+        }
+
+        // การ์ดหุ้นแบบกะทัดรัดสำหรับมือถือ — ชื่อหุ้น+ราคาใหญ่ชัดเจน พร้อมสีบอกขึ้น/ลงจากราคาปิดก่อนหน้า
+        function buildMobileStockCardHtml(row, isFav) {
+            const starIcon = isFav ? '⭐' : '☆';
+            const starLabel = isFav ? `นำ ${row.ticker} ออกจากรายการโปรด` : `เพิ่ม ${row.ticker} ในรายการโปรด`;
+
+            let changeHtml = '';
+            if (typeof row.change === 'number' && typeof row.changePercent === 'number') {
+                const dir = row.change > 0 ? 'up' : (row.change < 0 ? 'down' : 'flat');
+                const arrow = row.change > 0 ? '▲' : (row.change < 0 ? '▼' : '—');
+                const sign = row.change > 0 ? '+' : '';
+                changeHtml = `<div class="msc-change ${dir}">${arrow} ${sign}${row.change.toFixed(2)} (${sign}${row.changePercent.toFixed(2)}%)</div>`;
+            }
+
+            return `<div class="mobile-stock-card" onclick="openStockFromTable('${row.ticker}')">
+                <button class="msc-star" onclick="toggleFavoriteFromTable('${row.ticker}', event)" aria-label="${starLabel}">${starIcon}</button>
+                <div class="msc-info">
+                    <div class="msc-ticker-row">
+                        <span class="msc-ticker">${row.ticker}</span>
+                    </div>
+                    <div class="msc-meta">${row.badgeHtml} แนวรับ ${row.supportDisplay}</div>
+                </div>
+                <div class="msc-right">
+                    <div class="msc-price">${row.priceDisplay}</div>
+                    ${changeHtml}
+                </div>
+            </div>`;
         }
 
         function changeTimeframe(tf) {
