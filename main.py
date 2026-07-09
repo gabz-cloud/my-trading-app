@@ -67,7 +67,43 @@ def debug_extended_hours(ticker: str):
         "result": fetch_finnhub_price(ticker_upper)
     }
 
+    result["calculated_market_state"] = calculate_market_state()
+    result["note"] = "แอปตอนนี้ใช้ calculated_market_state (คำนวณเอง ไม่พึ่ง yfinance) เป็นตัวตัดสินจริง ไม่ใช่ yfinance.marketState ด้านบนอีกต่อไป"
+
     return result
+
+# ============================================================
+# คำนวณสถานะตลาดหุ้นสหรัฐฯ (PRE/REGULAR/POST/CLOSED) จากเวลาปัจจุบันโดยตรง
+# ไม่ต้องพึ่ง API ไหนเลย (เดิมพึ่ง yfinance.info ซึ่งไม่เสถียร โดน rate limit บ่อย)
+# อ้างอิงเวลาทำการมาตรฐานของ NYSE/Nasdaq เท่านั้น ไม่ได้เช็ควันหยุดพิเศษของตลาด
+# (ตรงกับหลักการเดียวกับ badge สถานะตลาดฝั่ง frontend)
+# ============================================================
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+
+def calculate_market_state():
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    weekday = now_et.weekday()  # จันทร์=0 ... อาทิตย์=6
+    minutes = now_et.hour * 60 + now_et.minute
+
+    if weekday >= 5:  # เสาร์-อาทิตย์: ตลาดปิดสนิทจริงๆ ไม่มี ECN ให้ราคาต่อเนื่อง ไม่ลองดึงเลย
+        return "CLOSED"
+
+    REGULAR_START = 9 * 60 + 30   # 09:30
+    REGULAR_END = 16 * 60          # 16:00
+    PRE_LABEL_START = 4 * 60       # 04:00 — จุดเปลี่ยน label จาก "หลังตลาดปิด" เป็น "ก่อนตลาดเปิด"
+
+    # หมายเหตุสำคัญ: เดิมมี "ช่วงหลุมดำ" ระหว่าง 20:00-04:00 ET ที่ถือว่า CLOSED ไปเลย
+    # ทั้งที่จริงๆราคาอาจยังขยับได้ต่อเนื่อง (เทรดนอกเวลาบางส่วนยังเปิดถึงดึก/ข้ามคืนได้)
+    # ตอนนี้แก้ให้ครอบคลุมทั้งวันจันทร์-ศุกร์ที่ไม่ใช่เวลาตลาดหลัก พยายามดึงราคาให้เสมอ
+    # แล้วปล่อยให้ Finnhub เป็นคนตัดสินว่ามีราคาจริงให้ไหม (ถ้าไม่มีก็แค่ไม่โชว์แถวนี้เฉยๆ)
+    if REGULAR_START <= minutes < REGULAR_END:
+        return "REGULAR"
+    elif PRE_LABEL_START <= minutes < REGULAR_START:
+        return "PRE"
+    else:
+        return "POST"  # ครอบคลุม 16:00 วันนี้ ถึง 04:00 วันถัดไป (รวมช่วงดึก/ข้ามคืนทั้งหมด)
 
 # ============================================================
 # Finnhub: ใช้เป็นแหล่งราคานอกเวลาตลาด (ก่อนเปิด/หลังปิด) แทน yfinance
@@ -491,48 +527,22 @@ def get_stock_data(ticker: str, tf: str = "1d"):
         chart_data = [round(x, 2) for x in df['Close'].tolist()]
 
         # ===== ราคานอกเวลาตลาด (ก่อนเปิด/หลังปิด) — ดึงเฉพาะตอนดูหุ้นรายตัวเท่านั้น
-        # ไม่ใส่ในโหมดสแกนทั้งตลาด (80 ตัว) เพราะ .info ของ yfinance หนักกว่า .history() มาก
-        # ถ้าดึงพร้อมกัน 80 ตัวจะช้าและเสี่ยงโดน rate limit สูงขึ้นมาก
+        # ไม่ใส่ในโหมดสแกนทั้งตลาด (80 ตัว) เพราะยิ่งดึงมากตัวยิ่งช้าและเสี่ยง rate limit สูงขึ้น
         #
-        # หมายเหตุ: ฟิลด์ preMarketPrice/postMarketPrice ของ yfinance ขึ้นชื่อว่าไม่เสถียร
-        # (มีรายงานปัญหานี้อยู่ใน GitHub ของ yfinance เอง) บางครั้ง Yahoo ไม่ส่งค่ามาให้
-        # แม้ราคาจริงจะมีอยู่บนเว็บก็ตาม — โค้ดนี้ log ไว้ให้เช็คได้จาก Render logs ว่า
-        # เกิดจากดึงไม่สำเร็จเลย (exception) หรือดึงสำเร็จแต่ Yahoo ไม่ส่งค่ามาให้ (field เป็น None) =====
-        market_state = None
+        # หมายเหตุ: เดิมใช้ yfinance (.info) บอกว่าตอนนี้อยู่ช่วง PRE/POST หรือเปล่า แต่พบว่า
+        # yfinance โดน rate limit บ่อย ทำให้ทั้งฟีเจอร์นี้ใช้งานไม่ได้ไปด้วยทั้งที่ปัญหาจริงๆ
+        # อยู่ที่ยืนแค่ "รู้เวลา" เท่านั้น — เปลี่ยนมาคำนวณช่วงเวลาเองจากเวลาปัจจุบันแทน
+        # (ไม่ต้องพึ่ง API ไหนเลยสำหรับส่วนนี้) แล้วให้ Finnhub รับผิดชอบเรื่องราคาอย่างเดียว
+        # ผลคือฟีเจอร์นี้ไม่ขึ้นกับความเสถียรของ yfinance อีกต่อไป =====
+        market_state = calculate_market_state()
         pre_market_price = None
         pre_market_change = None
         pre_market_change_percent = None
         post_market_price = None
         post_market_change = None
         post_market_change_percent = None
-        try:
-            info = stock.info
-            market_state = info.get("marketState")
-
-            def _num(key):
-                val = info.get(key)
-                return round(float(val), 2) if isinstance(val, (int, float)) else None
-
-            pre_market_price = _num("preMarketPrice")
-            pre_market_change = _num("preMarketChange")
-            pre_market_change_percent = _num("preMarketChangePercent")
-            post_market_price = _num("postMarketPrice")
-            post_market_change = _num("postMarketChange")
-            post_market_change_percent = _num("postMarketChangePercent")
-
-            print(
-                f"[extended-hours] {ticker_upper}: marketState={market_state}, "
-                f"preMarketPrice={pre_market_price}, postMarketPrice={post_market_price}"
-            )
-        except Exception as e:
-            # หาไม่เจอ/ดึงไม่ได้ก็ไม่เป็นไร แค่ไม่แสดงส่วนนี้ ไม่กระทบข้อมูลหลัก
-            # แต่ log ไว้ให้เห็นสาเหตุจริง แทนที่จะเงียบไปเฉยๆ
-            print(f"[extended-hours] {ticker_upper}: ดึง .info ไม่สำเร็จ -> {repr(e)}")
-
         extended_hours_source = None
 
-        # yfinance บอกได้ว่าตอนนี้อยู่ช่วง PRE/POST หรือเปล่า แต่ตัวราคาเองมักไม่มาด้วย (บั๊กที่รู้จักกันดี)
-        # -> ถ้าตั้ง FINNHUB_API_KEY ไว้ ใช้ Finnhub เป็นแหล่งราคาหลักแทนในช่วงนอกเวลาตลาด
         if market_state == "PRE":
             finnhub_data = fetch_finnhub_price(ticker_upper)
             if finnhub_data:
@@ -540,8 +550,7 @@ def get_stock_data(ticker: str, tf: str = "1d"):
                 pre_market_change = finnhub_data["change"]
                 pre_market_change_percent = finnhub_data["change_percent"]
                 extended_hours_source = "finnhub"
-            elif pre_market_price is not None:
-                extended_hours_source = "yfinance"
+            print(f"[extended-hours] {ticker_upper}: state=PRE (คำนวณเอง), finnhub={finnhub_data}")
         elif market_state == "POST":
             finnhub_data = fetch_finnhub_price(ticker_upper)
             if finnhub_data:
@@ -549,8 +558,7 @@ def get_stock_data(ticker: str, tf: str = "1d"):
                 post_market_change = finnhub_data["change"]
                 post_market_change_percent = finnhub_data["change_percent"]
                 extended_hours_source = "finnhub"
-            elif post_market_price is not None:
-                extended_hours_source = "yfinance"
+            print(f"[extended-hours] {ticker_upper}: state=POST (คำนวณเอง), finnhub={finnhub_data}")
 
         # ===== ข้อมูลเต็มช่วงเวลา สำหรับวาดกราฟ RSI/MACD ใต้กราฟราคาหลัก =====
         close_full = df['Close'].dropna()
