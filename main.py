@@ -38,6 +38,32 @@ def serve_service_worker():
     sw_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sw.js")
     return FileResponse(sw_path, media_type="application/javascript")
 
+# เอาไว้เช็คตรงๆว่า yfinance ส่งข้อมูลราคานอกเวลาตลาดกลับมาให้จริงไหม
+# เข้า URL นี้ตรงๆในเบราว์เซอร์ได้เลย เช่น /debug/extended-hours/AAPL
+@app.get("/debug/extended-hours/{ticker}")
+def debug_extended_hours(ticker: str):
+    ticker_upper = ticker.upper()
+    try:
+        stock = yf.Ticker(ticker_upper)
+        info = stock.info
+        keys_to_check = [
+            "marketState", "preMarketPrice", "preMarketChange", "preMarketChangePercent",
+            "postMarketPrice", "postMarketChange", "postMarketChangePercent",
+            "regularMarketPrice", "regularMarketTime"
+        ]
+        return {
+            "ticker": ticker_upper,
+            "info_fetch_succeeded": True,
+            "relevant_fields": {k: info.get(k) for k in keys_to_check},
+            "total_fields_in_info": len(info)
+        }
+    except Exception as e:
+        return {
+            "ticker": ticker_upper,
+            "info_fetch_succeeded": False,
+            "error": repr(e)
+        }
+
 STOCKS_TO_SCAN = [
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "AMD", "INTC",
     "AVGO", "QCOM", "TXN", "MU", "SMCI", "ARM", "ASML", "NFLX", "ADBE", "ORCL",
@@ -412,7 +438,12 @@ def get_stock_data(ticker: str, tf: str = "1d"):
 
         # ===== ราคานอกเวลาตลาด (ก่อนเปิด/หลังปิด) — ดึงเฉพาะตอนดูหุ้นรายตัวเท่านั้น
         # ไม่ใส่ในโหมดสแกนทั้งตลาด (80 ตัว) เพราะ .info ของ yfinance หนักกว่า .history() มาก
-        # ถ้าดึงพร้อมกัน 80 ตัวจะช้าและเสี่ยงโดน rate limit สูงขึ้นมาก =====
+        # ถ้าดึงพร้อมกัน 80 ตัวจะช้าและเสี่ยงโดน rate limit สูงขึ้นมาก
+        #
+        # หมายเหตุ: ฟิลด์ preMarketPrice/postMarketPrice ของ yfinance ขึ้นชื่อว่าไม่เสถียร
+        # (มีรายงานปัญหานี้อยู่ใน GitHub ของ yfinance เอง) บางครั้ง Yahoo ไม่ส่งค่ามาให้
+        # แม้ราคาจริงจะมีอยู่บนเว็บก็ตาม — โค้ดนี้ log ไว้ให้เช็คได้จาก Render logs ว่า
+        # เกิดจากดึงไม่สำเร็จเลย (exception) หรือดึงสำเร็จแต่ Yahoo ไม่ส่งค่ามาให้ (field เป็น None) =====
         market_state = None
         pre_market_price = None
         pre_market_change = None
@@ -434,8 +465,15 @@ def get_stock_data(ticker: str, tf: str = "1d"):
             post_market_price = _num("postMarketPrice")
             post_market_change = _num("postMarketChange")
             post_market_change_percent = _num("postMarketChangePercent")
-        except Exception:
-            pass  # หาไม่เจอ/ดึงไม่ได้ก็ไม่เป็นไร แค่ไม่แสดงส่วนนี้ ไม่กระทบข้อมูลหลัก
+
+            print(
+                f"[extended-hours] {ticker_upper}: marketState={market_state}, "
+                f"preMarketPrice={pre_market_price}, postMarketPrice={post_market_price}"
+            )
+        except Exception as e:
+            # หาไม่เจอ/ดึงไม่ได้ก็ไม่เป็นไร แค่ไม่แสดงส่วนนี้ ไม่กระทบข้อมูลหลัก
+            # แต่ log ไว้ให้เห็นสาเหตุจริง แทนที่จะเงียบไปเฉยๆ
+            print(f"[extended-hours] {ticker_upper}: ดึง .info ไม่สำเร็จ -> {repr(e)}")
 
         # ===== ข้อมูลเต็มช่วงเวลา สำหรับวาดกราฟ RSI/MACD ใต้กราฟราคาหลัก =====
         close_full = df['Close'].dropna()
