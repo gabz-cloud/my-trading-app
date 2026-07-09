@@ -1023,9 +1023,38 @@
         }
         .btn-table-unstar:hover { opacity: 1; color: var(--accent-gold); transform: scale(1.2); }
 
+        /* ===== แท็บเนวิเกชันสำหรับมือถือ (ค่าเริ่มต้น = ไม่มีผลอะไรบนจอใหญ่) ===== */
+        .mobile-view { display: block; }
+        .mobile-tab-bar {
+            display: none;
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            z-index: 70;
+            background: var(--container-bg);
+            border-top: 1px solid var(--border-color);
+            justify-content: space-around;
+            padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+        }
+        .mobile-tab-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 10.5px;
+            font-weight: 700;
+            padding: 4px 18px;
+            border-radius: 10px;
+        }
+        .mobile-tab-btn .tab-icon { font-size: 21px; }
+        .mobile-tab-btn.active { color: var(--accent-teal); }
+        .stock-view-empty { display: none; }
+
         @media (max-width: 900px) {
             .topbar { padding: 12px 18px; }
-            .page { padding: 22px 16px 50px; }
+            .page { padding: 22px 16px 90px; }
             .card { padding: 20px; }
             .stock-detail { grid-template-columns: 1fr; }
             .search-bar-row { flex-direction: column; align-items: stretch; }
@@ -1033,8 +1062,26 @@
             .table-toolbar { flex-direction: column; align-items: stretch; }
             .toolbar-num { width: 100%; }
             .indicators-row { grid-template-columns: 1fr; }
-            .compare-bar { flex-wrap: wrap; justify-content: center; width: 90%; }
+            .compare-bar { flex-wrap: wrap; justify-content: center; width: 90%; bottom: 76px; }
             .digest-stats { grid-template-columns: 1fr; }
+
+            /* เปิดใช้ระบบแท็บเนวิเกชัน เฉพาะบนจอมือถือเท่านั้น */
+            .mobile-view { display: none; }
+            .mobile-view.active { display: block; }
+            .mobile-tab-bar { display: flex; }
+            .stock-view-empty.show {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 12px;
+                padding: 70px 24px;
+                text-align: center;
+                color: var(--text-muted);
+                font-size: 14px;
+                line-height: 1.6;
+            }
+            .stock-view-empty-icon { font-size: 42px; opacity: 0.5; }
         }
 
         /* ===== จอมือถือแคบ (พอร์เทรต) ===== */
@@ -1160,6 +1207,7 @@
 
     <div class="page">
 
+        <div id="mobileViewHome" class="mobile-view active">
         <section class="hero card">
             <h1>ระบบวิเคราะห์และคัดกรองหุ้น</h1>
             <p class="subtitle">ค้นหาหุ้นรายตัว ดูแนวรับแนวต้าน หรือสแกนสัญญาณซื้อขายทั่วตลาดได้ในที่เดียว</p>
@@ -1205,7 +1253,13 @@
                 <div id="digestFavList" class="digest-fav-list"></div>
             </div>
         </section>
+        </div>
 
+        <div id="mobileViewStock" class="mobile-view">
+        <div id="stockViewEmptyState" class="stock-view-empty show">
+            <div class="stock-view-empty-icon">📈</div>
+            <div>ยังไม่ได้เลือกหุ้นครับ ลองค้นหาจากหน้า "หน้าแรก" ดูก่อนได้เลย</div>
+        </div>
         <section id="resultBox" class="result-box card">
 
             <div class="stock-detail">
@@ -1342,9 +1396,9 @@
                 </div>
             </div>
         </section>
+        </div>
 
-
-
+        <div id="mobileViewScreener" class="mobile-view">
         <section id="screenerWrapper" class="card">
             <div class="market-tabs">
                 <div id="tab-all" class="tab-item active" role="tab" tabindex="0" aria-selected="true" onclick="switchTab('all')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('all');}">🔥 ทั้งหมด (สแกนเทคนิคคอล)</div>
@@ -1406,6 +1460,7 @@
                 <canvas id="compareChart"></canvas>
             </div>
         </section>
+        </div>
 
     </div>
 
@@ -1414,6 +1469,18 @@
         <button class="btn-set-alert" onclick="openCompare()">เปรียบเทียบ</button>
         <button class="alert-remove-btn" onclick="clearCompareSelection()">ล้าง</button>
     </div>
+
+    <nav class="mobile-tab-bar" aria-label="เมนูหลัก">
+        <button type="button" id="tabBtnHome" class="mobile-tab-btn active" onclick="switchMobileView('home')">
+            <span class="tab-icon">🔍</span><span>หน้าแรก</span>
+        </button>
+        <button type="button" id="tabBtnStock" class="mobile-tab-btn" onclick="switchMobileView('stock')">
+            <span class="tab-icon">📈</span><span>หุ้น</span>
+        </button>
+        <button type="button" id="tabBtnScreener" class="mobile-tab-btn" onclick="switchMobileView('screener')">
+            <span class="tab-icon">📋</span><span>สแกน</span>
+        </button>
+    </nav>
 
 
     <script>
@@ -2523,6 +2590,7 @@
             setInterval(updateMarketStatus, 60000); // เช็คซ้ำทุก 1 นาที
             autoFetchScreenerOnLoad();
             updatePushButtonState();
+            updateStockViewEmptyState();
 
             // ถ้าเคยเปิดใช้งานแจ้งเตือนพื้นหลังไว้แล้ว ลงทะเบียน Service Worker ใหม่เงียบๆ
             // (ตัว subscription เดิมยังอยู่ฝั่งเบราว์เซอร์แล้ว ไม่ต้องขอสิทธิ์ซ้ำ)
@@ -2677,6 +2745,30 @@
             }
         }
 
+        // ========= สลับหน้าแบบแท็บ (เฉพาะจอมือถือ — บนจอใหญ่ทุกอย่างยังโชว์พร้อมกันเหมือนเดิม) =========
+        let currentMobileView = 'home';
+        const MOBILE_VIEW_IDS = { home: 'mobileViewHome', stock: 'mobileViewStock', screener: 'mobileViewScreener' };
+        const MOBILE_TAB_BTN_IDS = { home: 'tabBtnHome', stock: 'tabBtnStock', screener: 'tabBtnScreener' };
+
+        function switchMobileView(view) {
+            currentMobileView = view;
+            Object.values(MOBILE_VIEW_IDS).forEach(id => document.getElementById(id).classList.remove('active'));
+            document.getElementById(MOBILE_VIEW_IDS[view]).classList.add('active');
+
+            Object.values(MOBILE_TAB_BTN_IDS).forEach(id => document.getElementById(id).classList.remove('active'));
+            document.getElementById(MOBILE_TAB_BTN_IDS[view]).classList.add('active');
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function updateStockViewEmptyState() {
+            const empty = document.getElementById('stockViewEmptyState');
+            const resultBox = document.getElementById('resultBox');
+            if (!empty || !resultBox) return;
+            const hasStock = resultBox.style.display === 'block';
+            empty.classList.toggle('show', !hasStock);
+        }
+
         function toggleTheme() {
             const root = document.documentElement;
             const currentTheme = root.getAttribute('data-theme');
@@ -2757,6 +2849,7 @@
                 document.getElementById('supportLevels').innerHTML = formatLevelsHtml(data.supports, data.supports_is_real);
 
                 document.getElementById('resultBox').style.display = 'block';
+                updateStockViewEmptyState();
                 updateChart(data);
                 renderIndicators(data);
                 renderComboSignal(data);
@@ -2770,7 +2863,7 @@
                 // ข่าวไม่จำเป็นต้องโหลดซ้ำทุกครั้งที่ auto-refresh ราคา (ข่าวไม่ได้เปลี่ยนถี่ขนาดนั้น)
                 if (!isAuto) {
                     fetchStockNews(data.ticker);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    switchMobileView('stock');
                 }
 
             } catch (error) { showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert'); }
@@ -3075,6 +3168,7 @@
         async function runScreener() {
             const mode = document.getElementById('screenerMode').value;
             currentScreenerType = mode;
+            switchMobileView('screener');
 
             // อัปเดตข้อความบนหัวแท็บให้เหมาะสมกับโหมดที่กำลังสแกน
             if (mode === 'buy') {
