@@ -410,6 +410,33 @@ def get_stock_data(ticker: str, tf: str = "1d"):
         analysis = calculate_levels_and_signal(df)
         chart_data = [round(x, 2) for x in df['Close'].tolist()]
 
+        # ===== ราคานอกเวลาตลาด (ก่อนเปิด/หลังปิด) — ดึงเฉพาะตอนดูหุ้นรายตัวเท่านั้น
+        # ไม่ใส่ในโหมดสแกนทั้งตลาด (80 ตัว) เพราะ .info ของ yfinance หนักกว่า .history() มาก
+        # ถ้าดึงพร้อมกัน 80 ตัวจะช้าและเสี่ยงโดน rate limit สูงขึ้นมาก =====
+        market_state = None
+        pre_market_price = None
+        pre_market_change = None
+        pre_market_change_percent = None
+        post_market_price = None
+        post_market_change = None
+        post_market_change_percent = None
+        try:
+            info = stock.info
+            market_state = info.get("marketState")
+
+            def _num(key):
+                val = info.get(key)
+                return round(float(val), 2) if isinstance(val, (int, float)) else None
+
+            pre_market_price = _num("preMarketPrice")
+            pre_market_change = _num("preMarketChange")
+            pre_market_change_percent = _num("preMarketChangePercent")
+            post_market_price = _num("postMarketPrice")
+            post_market_change = _num("postMarketChange")
+            post_market_change_percent = _num("postMarketChangePercent")
+        except Exception:
+            pass  # หาไม่เจอ/ดึงไม่ได้ก็ไม่เป็นไร แค่ไม่แสดงส่วนนี้ ไม่กระทบข้อมูลหลัก
+
         # ===== ข้อมูลเต็มช่วงเวลา สำหรับวาดกราฟ RSI/MACD ใต้กราฟราคาหลัก =====
         close_full = df['Close'].dropna()
         rsi_full = calculate_rsi(close_full)
@@ -430,6 +457,13 @@ def get_stock_data(ticker: str, tf: str = "1d"):
             "resistances": analysis["resistances"],
             "supports_is_real": analysis.get("supports_is_real", []),
             "resistances_is_real": analysis.get("resistances_is_real", []),
+            "market_state": market_state,
+            "pre_market_price": pre_market_price,
+            "pre_market_change": pre_market_change,
+            "pre_market_change_percent": pre_market_change_percent,
+            "post_market_price": post_market_price,
+            "post_market_change": post_market_change,
+            "post_market_change_percent": post_market_change_percent,
             "chart_data": chart_data,
             "chart_dates": chart_dates,
             "rsi": analysis["rsi"],

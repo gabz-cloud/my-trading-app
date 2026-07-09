@@ -539,6 +539,17 @@
             position: relative;
         }
 
+        .compact-search-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+        .compact-search-row .btn-search { padding: 11px 18px; }
+        .compact-search-row .btn-screener { padding: 11px 14px; font-size: 16px; }
+
         .input-wrap { position: relative; flex: 1 1 240px; min-width: 220px; }
         .input-wrap .input-icon {
             position: absolute; left: 14px; top: 50%;
@@ -694,6 +705,21 @@
             font-weight: 700;
             margin: 16px 0 8px;
         }
+        .extended-hours-row {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-bottom: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13.5px;
+        }
+        .eh-icon { font-size: 13px; }
+        .eh-label { color: var(--text-muted); font-family: 'Inter', sans-serif; font-size: 11.5px; }
+        .eh-price { color: var(--text-color); font-weight: 700; }
+        .eh-change { font-weight: 600; }
+        .eh-change.up { color: var(--up-color); }
+        .eh-change.down { color: var(--down-color); }
+        .eh-change.flat { color: var(--text-muted); }
         .signal {
             display: inline-flex;
             padding: 8px 16px;
@@ -968,6 +994,21 @@
         }
         .btn-reset-filter:hover { color: var(--text-color); border-color: var(--accent-teal); }
 
+        .price-input-wrap { position: relative; }
+        .price-input-wrap .toolbar-num { padding-right: 30px; }
+        .clear-input-btn {
+            position: absolute;
+            right: 6px; top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 12px;
+            padding: 4px 6px;
+            opacity: 0.6;
+        }
+        .clear-input-btn:hover { opacity: 1; color: var(--down-color); }
+
         th.sortable { cursor: pointer; user-select: none; }
         th.sortable:hover { color: var(--text-color); }
         .sort-icon { font-size: 9px; margin-left: 4px; opacity: 0.8; display: inline-block; min-width: 8px; }
@@ -1046,7 +1087,7 @@
             z-index: 70;
             background: var(--container-bg);
             border-top: 1px solid var(--border-color);
-            justify-content: space-around;
+            justify-content: center;
             padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
         }
         .mobile-tab-btn {
@@ -1255,7 +1296,7 @@
         <div id="mobileViewStock" class="mobile-view">
         <div id="stockViewEmptyState" class="stock-view-empty show">
             <div class="stock-view-empty-icon">📈</div>
-            <div>ยังไม่ได้เลือกหุ้นครับ ลองเลือกจากแท็บ "สแกน" ดูก่อนได้เลย</div>
+            <div>ยังไม่ได้เลือกหุ้นครับ ลองเลือกจากแท็บ "หุ้น" ดูก่อนได้เลย</div>
         </div>
         <section id="resultBox" class="result-box card">
             <button class="btn-back" onclick="goBackFromStock()" aria-label="กลับไปหน้าสแกน">← กลับ</button>
@@ -1271,6 +1312,12 @@
                     </div>
 
                     <div id="stockPrice" class="price">$0.00</div>
+                    <div id="extendedHoursRow" class="extended-hours-row" style="display:none;">
+                        <span id="extendedHoursIcon" class="eh-icon">🌙</span>
+                        <span id="extendedHoursLabel" class="eh-label">หลังตลาดปิด</span>
+                        <span id="extendedHoursPrice" class="eh-price">-</span>
+                        <span id="extendedHoursChange" class="eh-change">-</span>
+                    </div>
                     <div id="stockSignal" class="signal">HOLD</div>
                     <div id="comboSignalBadge" class="combo-signal-badge" style="display:none;"></div>
 
@@ -1397,22 +1444,6 @@
         </div>
 
         <div id="mobileViewScreener" class="mobile-view active">
-        <section class="hero card">
-            <h1>ระบบวิเคราะห์และคัดกรองหุ้น</h1>
-            <p class="subtitle">แอปสแกนสัญญาณซื้อขายให้อัตโนมัติทุกครั้งที่เข้ามา หรือค้นหาหุ้นรายตัวได้เลย</p>
-
-            <div class="search-bar-row">
-                <div class="input-wrap">
-                    <span class="input-icon">🔍</span>
-                    <input type="text" id="tickerInput" placeholder="ใส่ชื่อหุ้น เช่น AAPL, TSLA, NVDA">
-                </div>
-                <button class="btn-search" onclick="searchStock()">ค้นหา</button>
-                <button class="btn-screener" onclick="refreshScan()">🔄 รีเฟรช</button>
-            </div>
-
-            <div id="recentlyViewedRow" class="recently-viewed-row"></div>
-        </section>
-
         <section id="dailyDigestCard" class="card daily-digest-card" style="display:none;">
             <div class="digest-header">
                 <div class="digest-title">📋 สรุปประจำวัน — <span id="digestDate"></span></div>
@@ -1439,6 +1470,16 @@
         </section>
 
         <section id="screenerWrapper" class="card">
+            <div class="compact-search-row">
+                <div class="input-wrap">
+                    <span class="input-icon">🔍</span>
+                    <input type="text" id="tickerInput" placeholder="ค้นหาหุ้นตัวอื่น เช่น DIS, KO...">
+                </div>
+                <button class="btn-search" onclick="searchStock()">ค้นหา</button>
+                <button class="btn-screener" onclick="refreshScan()" aria-label="รีเฟรชข้อมูล">🔄</button>
+            </div>
+            <div id="recentlyViewedRow" class="recently-viewed-row"></div>
+
             <div class="market-tabs">
                 <div id="tab-buy" class="tab-item active" role="tab" tabindex="0" aria-selected="true" onclick="switchTab('buy')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('buy');}">🔥 BUY (เทคนิคคอล)</div>
                 <div id="tab-hold" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('hold')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('hold');}">💎 HOLD (ออมยาว)</div>
@@ -1450,9 +1491,14 @@
                     <span class="input-icon">🔍</span>
                     <input type="text" id="filterTicker" placeholder="กรองตามชื่อหุ้น..." oninput="onFilterChange()">
                 </div>
-                <input type="number" id="filterMinPrice" class="toolbar-num" placeholder="ราคาต่ำสุด ($)" oninput="onFilterChange()">
-                <input type="number" id="filterMaxPrice" class="toolbar-num" placeholder="ราคาสูงสุด ($)" oninput="onFilterChange()">
-                <button class="btn-reset-filter" onclick="resetFilters()">ล้างตัวกรอง</button>
+                <div class="price-input-wrap">
+                    <input type="number" id="filterMinPrice" class="toolbar-num" placeholder="ราคาต่ำสุด ($)" oninput="onFilterChange()">
+                    <button type="button" class="clear-input-btn" onclick="clearSingleFilter('filterMinPrice')" aria-label="ล้างราคาต่ำสุด">✕</button>
+                </div>
+                <div class="price-input-wrap">
+                    <input type="number" id="filterMaxPrice" class="toolbar-num" placeholder="ราคาสูงสุด ($)" oninput="onFilterChange()">
+                    <button type="button" class="clear-input-btn" onclick="clearSingleFilter('filterMaxPrice')" aria-label="ล้างราคาสูงสุด">✕</button>
+                </div>
                 <button class="btn-export-csv" onclick="exportTableCsv()">📥 Export CSV</button>
             </div>
 
@@ -1514,9 +1560,6 @@
 
     <nav class="mobile-tab-bar" aria-label="เมนูหลัก">
         <button type="button" id="tabBtnScreener" class="mobile-tab-btn active" onclick="switchMobileView('screener')">
-            <span class="tab-icon">📋</span><span>สแกน</span>
-        </button>
-        <button type="button" id="tabBtnStock" class="mobile-tab-btn" onclick="switchMobileView('stock')">
             <span class="tab-icon">📈</span><span>หุ้น</span>
         </button>
     </nav>
@@ -2381,6 +2424,46 @@
             el.className = `combo-signal-badge ${combo.type}`;
         }
 
+        // ========= ราคานอกเวลาตลาด (ก่อนเปิด/หลังปิด) =========
+        function renderExtendedHours(data) {
+            const row = document.getElementById('extendedHoursRow');
+            const iconEl = document.getElementById('extendedHoursIcon');
+            const labelEl = document.getElementById('extendedHoursLabel');
+            const priceEl = document.getElementById('extendedHoursPrice');
+            const changeEl = document.getElementById('extendedHoursChange');
+            if (!row) return;
+
+            let price = null, change = null, changePercent = null, icon = '🌙', label = 'หลังตลาดปิด';
+
+            if (data.market_state === 'POST' && typeof data.post_market_price === 'number') {
+                price = data.post_market_price;
+                change = data.post_market_change;
+                changePercent = data.post_market_change_percent;
+                icon = '🌙';
+                label = 'หลังตลาดปิด';
+            } else if (data.market_state === 'PRE' && typeof data.pre_market_price === 'number') {
+                price = data.pre_market_price;
+                change = data.pre_market_change;
+                changePercent = data.pre_market_change_percent;
+                icon = '🌅';
+                label = 'ก่อนตลาดเปิด';
+            }
+
+            if (price === null) {
+                row.style.display = 'none';
+                return;
+            }
+
+            const dir = (change > 0) ? 'up' : (change < 0 ? 'down' : 'flat');
+            const sign = (change > 0) ? '+' : '';
+            iconEl.innerText = icon;
+            labelEl.innerText = label;
+            priceEl.innerText = `$${price.toFixed(2)}`;
+            changeEl.innerText = `${sign}${(change ?? 0).toFixed(2)} (${sign}${(changePercent ?? 0).toFixed(2)}%)`;
+            changeEl.className = `eh-change ${dir}`;
+            row.style.display = 'flex';
+        }
+
         function renderIndicators(data) {
             const rsiEl = document.getElementById('rsiValue');
             const rsiZoneEl = document.getElementById('rsiZone');
@@ -2839,15 +2922,21 @@
         // ========= สลับหน้าแบบแท็บ (เฉพาะจอมือถือ — บนจอใหญ่ทุกอย่างยังโชว์พร้อมกันเหมือนเดิม) =========
         let currentMobileView = 'screener';
         const MOBILE_VIEW_IDS = { stock: 'mobileViewStock', screener: 'mobileViewScreener' };
-        const MOBILE_TAB_BTN_IDS = { stock: 'tabBtnStock', screener: 'tabBtnScreener' };
+        // มีปุ่มแท็บล่างแค่ "หุ้น" (เดิมชื่อ "สแกน") ปุ่มเดียว — หน้ารายละเอียดหุ้นเข้าถึงผ่านการแตะ
+        // การ์ด/ค้นหาเท่านั้น แล้วกลับด้วยปุ่ม "← กลับ" แทน ไม่มีปุ่มแท็บของตัวเองแล้ว
+        const MOBILE_TAB_BTN_IDS = { screener: 'tabBtnScreener' };
 
         function switchMobileView(view) {
             currentMobileView = view;
             Object.values(MOBILE_VIEW_IDS).forEach(id => document.getElementById(id).classList.remove('active'));
             document.getElementById(MOBILE_VIEW_IDS[view]).classList.add('active');
 
-            Object.values(MOBILE_TAB_BTN_IDS).forEach(id => document.getElementById(id).classList.remove('active'));
-            document.getElementById(MOBILE_TAB_BTN_IDS[view]).classList.add('active');
+            Object.values(MOBILE_TAB_BTN_IDS).forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(MOBILE_TAB_BTN_IDS[view]);
+            if (activeBtn) activeBtn.classList.add('active');
 
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -2948,6 +3037,7 @@
                 document.getElementById('resultBox').style.display = 'block';
                 updateStockViewEmptyState();
                 updateChart(data);
+                renderExtendedHours(data);
                 renderIndicators(data);
                 renderComboSignal(data);
                 renderMacdChart(data);
@@ -3036,6 +3126,12 @@
             document.getElementById('filterMaxPrice').value = '';
             filterState = { text: '', minPrice: null, maxPrice: null };
             renderTable();
+        }
+
+        // ล้างค่าเฉพาะช่องราคาที่กด × (ไม่ต้องล้างตัวกรองอื่นทั้งหมดเหมือนปุ่มรวมเดิม)
+        function clearSingleFilter(inputId) {
+            document.getElementById(inputId).value = '';
+            onFilterChange();
         }
 
         // แปลงข้อมูลของทั้ง 3 แท็บ (BUY / HOLD / ชื่นชอบ) ให้อยู่ในรูปแบบเดียวกัน
