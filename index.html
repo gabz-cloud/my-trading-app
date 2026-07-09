@@ -465,6 +465,35 @@
 
         /* ===== Daily Digest ===== */
         .daily-digest-card { padding: 22px 26px; }
+
+        /* ===== Heatmap ภาพรวมตลาด ===== */
+        .heatmap-card { padding: 22px 24px; }
+        .heatmap-header { margin-bottom: 16px; }
+        .heatmap-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; }
+        .heatmap-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .heatmap-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+            gap: 5px;
+        }
+        .heatmap-tile {
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 6px;
+            cursor: pointer;
+            color: #ffffff;
+            text-align: center;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .heatmap-tile:hover { transform: scale(1.06); z-index: 2; box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
+        .heatmap-tile-logo { width: 22px; height: 22px; border-radius: 5px; background: #fff; margin-bottom: 3px; object-fit: contain; padding: 2px; }
+        .heatmap-tile-ticker { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        .heatmap-tile-change { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10.5px; margin-top: 2px; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+
         .digest-header {
             display: flex;
             align-items: center;
@@ -1088,6 +1117,7 @@
             background: var(--container-bg);
             border-top: 1px solid var(--border-color);
             justify-content: center;
+            gap: 48px;
             padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
         }
         .mobile-tab-btn {
@@ -1204,6 +1234,11 @@
             .hero h1 { font-size: 21px; }
             .price { font-size: 32px; }
             .digest-title { font-size: 14px; }
+
+            .heatmap-grid { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 4px; }
+            .heatmap-tile-ticker { font-size: 10.5px; }
+            .heatmap-tile-change { font-size: 9px; }
+            .heatmap-tile-logo { width: 18px; height: 18px; }
 
             /* ตารางสแกน: ซ่อนคอลัมน์ "อันดับ" กับ "โลโก้" (ข้อมูลสำคัญน้อยสุด)
                ที่เหลือ (เปรียบเทียบ/ดาว/ชื่อหุ้น/ราคา/แนวรับ/สัญญาณ) พอดีจอ ไม่ต้องเลื่อนซ้ายขวาอีก */
@@ -1443,7 +1478,19 @@
         </section>
         </div>
 
-        <div id="mobileViewScreener" class="mobile-view active">
+        <div id="mobileViewHeatmap" class="mobile-view active">
+        <section id="heatmapCard" class="card heatmap-card">
+            <div class="heatmap-header">
+                <div class="heatmap-title">🗺️ ภาพรวมตลาด</div>
+                <div class="heatmap-subtitle">สีเขียว = ราคาขึ้น, สีแดง = ราคาลง — ยิ่งเข้มยิ่งเปลี่ยนแปลงมาก (แตะเพื่อดูรายละเอียด)</div>
+            </div>
+            <div id="heatmapGrid" class="heatmap-grid">
+                <div class="news-empty">กำลังโหลดข้อมูล...</div>
+            </div>
+        </section>
+        </div>
+
+        <div id="mobileViewScreener" class="mobile-view">
         <section id="dailyDigestCard" class="card daily-digest-card" style="display:none;">
             <div class="digest-header">
                 <div class="digest-title">📋 สรุปประจำวัน — <span id="digestDate"></span></div>
@@ -1559,7 +1606,10 @@
     </div>
 
     <nav class="mobile-tab-bar" aria-label="เมนูหลัก">
-        <button type="button" id="tabBtnScreener" class="mobile-tab-btn active" onclick="switchMobileView('screener')">
+        <button type="button" id="tabBtnHeatmap" class="mobile-tab-btn active" onclick="switchMobileView('heatmap')">
+            <span class="tab-icon">🗺️</span><span>ภาพรวม</span>
+        </button>
+        <button type="button" id="tabBtnScreener" class="mobile-tab-btn" onclick="switchMobileView('screener')">
             <span class="tab-icon">📈</span><span>หุ้น</span>
         </button>
     </nav>
@@ -2790,6 +2840,7 @@
                 latestScreenerData = data.stocks || [];
                 currentScreenerType = "buy";
                 renderTickerTape(latestScreenerData);
+                renderHeatmap();
                 checkAlerts(buildPriceMap(latestScreenerData));
                 checkSignalAlerts(buildSignalMap(latestScreenerData));
                 checkBreakoutAlerts(buildBreakoutMap(latestScreenerData));
@@ -2824,6 +2875,51 @@
                 }
             });
             return map;
+        }
+
+        // ========= Heatmap ภาพรวมตลาด =========
+        // แปลง % เปลี่ยนแปลงเป็นสีไล่โทน เขียว (ขึ้น) / แดง (ลง) ยิ่งเปลี่ยนแปลงเยอะยิ่งเข้ม
+        // จำกัดช่วงไว้ที่ ±8% กันหุ้นที่ขยับแรงผิดปกติทำให้สีเข้มสุดโต่งจนแยกไม่ออกจากตัวอื่น
+        function heatmapColor(pct) {
+            if (typeof pct !== 'number') return 'rgba(130,138,158,0.35)'; // ไม่มีข้อมูล -> สีเทาจาง
+            const clamped = Math.max(-8, Math.min(8, pct));
+            if (clamped >= 0) {
+                const intensity = clamped / 8;
+                const lightness = 46 - intensity * 21;
+                return `hsl(150, 62%, ${lightness}%)`;
+            } else {
+                const intensity = Math.abs(clamped) / 8;
+                const lightness = 46 - intensity * 21;
+                return `hsl(355, 62%, ${lightness}%)`;
+            }
+        }
+
+        function renderHeatmap() {
+            const grid = document.getElementById('heatmapGrid');
+            if (!grid) return;
+
+            if (!latestScreenerData || latestScreenerData.length === 0) {
+                grid.innerHTML = `<div class="news-empty">ยังไม่มีข้อมูลครับ ลองกดรีเฟรชดูก่อนได้เลย</div>`;
+                return;
+            }
+
+            // เรียงจาก % เปลี่ยนแปลงมากไปน้อย ให้หุ้นที่ขยับแรงสุด (บวก/ลบ) เห็นชัดก่อน
+            const sorted = [...latestScreenerData].sort((a, b) => {
+                const pa = typeof a.change_percent === 'number' ? a.change_percent : -999;
+                const pb = typeof b.change_percent === 'number' ? b.change_percent : -999;
+                return pb - pa;
+            });
+
+            grid.innerHTML = sorted.map(stock => {
+                const pct = typeof stock.change_percent === 'number' ? stock.change_percent : null;
+                const pctText = pct !== null ? `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%` : '-';
+                const bgColor = heatmapColor(pct);
+                return `<div class="heatmap-tile" style="background-color:${bgColor};" onclick="openStockFromTable('${stock.ticker}')" title="${stock.ticker}: ${pctText}">
+                    <img class="heatmap-tile-logo" src="${getLocalLogoUrl(stock.ticker)}" onerror="this.style.display='none'" alt="">
+                    <div class="heatmap-tile-ticker">${stock.ticker}</div>
+                    <div class="heatmap-tile-change">${pctText}</div>
+                </div>`;
+            }).join('');
         }
 
         function renderTickerTape(list) {
@@ -2920,13 +3016,11 @@
         }
 
         // ========= สลับหน้าแบบแท็บ (เฉพาะจอมือถือ — บนจอใหญ่ทุกอย่างยังโชว์พร้อมกันเหมือนเดิม) =========
-        let currentMobileView = 'screener';
-        const MOBILE_VIEW_IDS = { stock: 'mobileViewStock', screener: 'mobileViewScreener' };
-        // มีปุ่มแท็บล่างแค่ "หุ้น" (เดิมชื่อ "สแกน") ปุ่มเดียว — หน้ารายละเอียดหุ้นเข้าถึงผ่านการแตะ
-        // การ์ด/ค้นหาเท่านั้น แล้วกลับด้วยปุ่ม "← กลับ" แทน ไม่มีปุ่มแท็บของตัวเองแล้ว
-        const MOBILE_TAB_BTN_IDS = { screener: 'tabBtnScreener' };
+        let currentMobileView = 'heatmap';
+        const MOBILE_VIEW_IDS = { stock: 'mobileViewStock', screener: 'mobileViewScreener', heatmap: 'mobileViewHeatmap' };
+        const MOBILE_TAB_BTN_IDS = { heatmap: 'tabBtnHeatmap', screener: 'tabBtnScreener' };
 
-        function switchMobileView(view) {
+        function switchMobileView(view, skipScroll) {
             currentMobileView = view;
             Object.values(MOBILE_VIEW_IDS).forEach(id => document.getElementById(id).classList.remove('active'));
             document.getElementById(MOBILE_VIEW_IDS[view]).classList.add('active');
@@ -2938,13 +3032,25 @@
             const activeBtn = document.getElementById(MOBILE_TAB_BTN_IDS[view]);
             if (activeBtn) activeBtn.classList.add('active');
 
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (!skipScroll) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
         }
 
-        // ปุ่ม "← กลับ" ในหน้ารายละเอียดหุ้น — กลับไปหน้าสแกนโดยไม่ต้องค้นหาใหม่
+        // ปุ่ม "← กลับ" ในหน้ารายละเอียดหุ้น — กลับไปหน้าตารางสแกนโดยไม่ต้องค้นหาใหม่
         // (ข้อมูลหุ้นที่เพิ่งดูยังอยู่ใน resultBox เหมือนเดิม แค่สลับมุมมองกลับไป)
+        //
+        // หมายเหตุ: บนจอคอม ทุก section โชว์อยู่พร้อมกันในหน้าเดียว (ไม่ได้ซ่อน/โชว์แบบมือถือ)
+        // การ scroll ไป "บนสุดของหน้า" (top:0) จะพาไปโผล่เหนือ heatmap/hero/digest ไม่ใช่ตารางที่ต้องการ
+        // เลยต้อง scroll ไปหา element ตารางโดยตรงแทน ให้เห็นผลลัพธ์ตรงจุดทันทีทั้งคอมและมือถือ
         function goBackFromStock() {
-            switchMobileView('screener');
+            switchMobileView('screener', true);
+            const screenerSection = document.getElementById('screenerWrapper');
+            if (screenerSection) {
+                screenerSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
         }
 
         function updateStockViewEmptyState() {
@@ -3417,6 +3523,7 @@
                 const data = await response.json();
                 latestScreenerData = data.stocks || [];
                 renderTickerTape(latestScreenerData);
+                renderHeatmap();
                 checkAlerts(buildPriceMap(latestScreenerData));
                 checkSignalAlerts(buildSignalMap(latestScreenerData));
                 checkBreakoutAlerts(buildBreakoutMap(latestScreenerData));
