@@ -2,6 +2,7 @@ import asyncio
 import time
 import os
 import json
+import requests
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -43,6 +44,8 @@ def serve_service_worker():
 @app.get("/debug/extended-hours/{ticker}")
 def debug_extended_hours(ticker: str):
     ticker_upper = ticker.upper()
+    result = {"ticker": ticker_upper}
+
     try:
         stock = yf.Ticker(ticker_upper)
         info = stock.info
@@ -51,18 +54,69 @@ def debug_extended_hours(ticker: str):
             "postMarketPrice", "postMarketChange", "postMarketChangePercent",
             "regularMarketPrice", "regularMarketTime"
         ]
-        return {
-            "ticker": ticker_upper,
+        result["yfinance"] = {
             "info_fetch_succeeded": True,
             "relevant_fields": {k: info.get(k) for k in keys_to_check},
             "total_fields_in_info": len(info)
         }
     except Exception as e:
+        result["yfinance"] = {"info_fetch_succeeded": False, "error": repr(e)}
+
+    result["finnhub"] = {
+        "api_key_configured": bool(FINNHUB_API_KEY),
+        "result": fetch_finnhub_price(ticker_upper)
+    }
+
+    return result
+
+# ============================================================
+# Finnhub: ใช้เป็นแหล่งราคานอกเวลาตลาด (ก่อนเปิด/หลังปิด) แทน yfinance
+# เพราะ preMarketPrice/postMarketPrice ของ yfinance เองไม่เสถียร (เป็นปัญหาที่รู้จักกันดี)
+# ต้องตั้ง environment variable FINNHUB_API_KEY บน Render ก่อนถึงจะใช้งานได้
+# ถ้าไม่ได้ตั้งไว้ ฟีเจอร์นี้จะปิดเงียบๆ ไม่กระทบข้อมูลหลักของแอปเลย
+# ============================================================
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
+FINNHUB_QUOTE_URL = "https://finnhub.io/api/v1/quote"
+
+
+def fetch_finnhub_price(ticker: str):
+    """
+    ดึงราคาล่าสุดจาก Finnhub (โดยทั่วไปรวมราคาจากการเทรดนอกเวลาตลาดด้วยสำหรับหุ้นสหรัฐฯ)
+    คืนค่า None ถ้ายังไม่ได้ตั้ง FINNHUB_API_KEY ไว้ หรือดึงข้อมูลไม่สำเร็จ
+    """
+    if not FINNHUB_API_KEY:
+        return None
+    try:
+        resp = requests.get(
+            FINNHUB_QUOTE_URL,
+            params={"symbol": ticker, "token": FINNHUB_API_KEY},
+            timeout=5
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        current_price = data.get("c")
+        prev_close = data.get("pc")
+
+        # Finnhub คืนค่า 0 ทุกฟิลด์เวลาหา ticker ไม่เจอ หรือ token ผิด แทนที่จะ error ตรงๆ
+        if not isinstance(current_price, (int, float)) or current_price == 0:
+            return None
+
+        change = None
+        change_percent = None
+        if isinstance(prev_close, (int, float)) and prev_close != 0:
+            change = round(current_price - prev_close, 2)
+            change_percent = round((change / prev_close) * 100, 2)
+
         return {
-            "ticker": ticker_upper,
-            "info_fetch_succeeded": False,
-            "error": repr(e)
+            "price": round(float(current_price), 2),
+            "change": change,
+            "change_percent": change_percent
         }
+    except Exception as e:
+        print(f"[finnhub] {ticker}: ดึงข้อมูลไม่สำเร็จ -> {repr(e)}")
+        return None
+
 
 STOCKS_TO_SCAN = [
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "AMD", "INTC",
@@ -475,6 +529,29 @@ def get_stock_data(ticker: str, tf: str = "1d"):
             # แต่ log ไว้ให้เห็นสาเหตุจริง แทนที่จะเงียบไปเฉยๆ
             print(f"[extended-hours] {ticker_upper}: ดึง .info ไม่สำเร็จ -> {repr(e)}")
 
+        extended_hours_source = None
+
+        # yfinance บอกได้ว่าตอนนี้อยู่ช่วง PRE/POST หรือเปล่า แต่ตัวราคาเองมักไม่มาด้วย (บั๊กที่รู้จักกันดี)
+        # -> ถ้าตั้ง FINNHUB_API_KEY ไว้ ใช้ Finnhub เป็นแหล่งราคาหลักแทนในช่วงนอกเวลาตลาด
+        if market_state == "PRE":
+            finnhub_data = fetch_finnhub_price(ticker_upper)
+            if finnhub_data:
+                pre_market_price = finnhub_data["price"]
+                pre_market_change = finnhub_data["change"]
+                pre_market_change_percent = finnhub_data["change_percent"]
+                extended_hours_source = "finnhub"
+            elif pre_market_price is not None:
+                extended_hours_source = "yfinance"
+        elif market_state == "POST":
+            finnhub_data = fetch_finnhub_price(ticker_upper)
+            if finnhub_data:
+                post_market_price = finnhub_data["price"]
+                post_market_change = finnhub_data["change"]
+                post_market_change_percent = finnhub_data["change_percent"]
+                extended_hours_source = "finnhub"
+            elif post_market_price is not None:
+                extended_hours_source = "yfinance"
+
         # ===== ข้อมูลเต็มช่วงเวลา สำหรับวาดกราฟ RSI/MACD ใต้กราฟราคาหลัก =====
         close_full = df['Close'].dropna()
         rsi_full = calculate_rsi(close_full)
@@ -502,6 +579,7 @@ def get_stock_data(ticker: str, tf: str = "1d"):
             "post_market_price": post_market_price,
             "post_market_change": post_market_change,
             "post_market_change_percent": post_market_change_percent,
+            "extended_hours_source": extended_hours_source,
             "chart_data": chart_data,
             "chart_dates": chart_dates,
             "rsi": analysis["rsi"],
