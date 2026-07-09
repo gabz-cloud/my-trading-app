@@ -306,6 +306,74 @@
         .collapsible-wrap.collapsed { display: none; }
         #indicatorsWrap:not(.collapsed) { margin-top: 14px; }
         .indicators-section { margin-top: 24px; }
+        .backtest-section { margin-top: 24px; }
+
+        .backtest-controls { display: flex; gap: 8px; margin-bottom: 16px; }
+        .backtest-controls select {
+            padding: 9px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .backtest-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .backtest-stat {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 8px;
+            text-align: center;
+        }
+        .backtest-stat-value { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700; }
+        .backtest-stat-value.up { color: var(--up-color); }
+        .backtest-stat-value.down { color: var(--down-color); }
+        .backtest-stat-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-weight: 600; line-height: 1.3; }
+        .backtest-compare-note {
+            font-size: 12.5px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: var(--input-bg);
+            margin-bottom: 14px;
+            line-height: 1.5;
+        }
+        .backtest-open-position {
+            font-size: 12.5px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: rgba(232, 179, 76, 0.1);
+            border: 1px solid rgba(232, 179, 76, 0.25);
+            margin-bottom: 14px;
+            line-height: 1.5;
+        }
+        .backtest-trades-title { font-size: 12.5px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
+        .backtest-trades-list {
+            max-height: 220px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        .backtest-trade-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .backtest-trade-row:last-child { border-bottom: none; }
+        .backtest-disclaimer {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 12px;
+            line-height: 1.5;
+        }
         .alert-setter-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
         .alert-kind-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
         .breakout-alert-hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
@@ -1167,6 +1235,7 @@
             .indicators-row { grid-template-columns: 1fr; }
             .compare-bar { flex-wrap: wrap; justify-content: center; width: 90%; bottom: 76px; }
             .digest-stats { grid-template-columns: 1fr; }
+            .backtest-stats { grid-template-columns: repeat(2, 1fr); }
 
             /* เปิดใช้ระบบแท็บเนวิเกชัน เฉพาะบนจอมือถือเท่านั้น */
             .mobile-view { display: none; }
@@ -1475,6 +1544,30 @@
                                 <canvas id="macdChart"></canvas>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="backtest-section">
+                <div class="news-section-header" role="button" tabindex="0" id="backtestSectionHeader"
+                    aria-expanded="false" aria-controls="backtestWrap" aria-label="ย่อ/ขยายผลทดสอบย้อนหลัง"
+                    onclick="toggleBacktestSection()"
+                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleBacktestSection();}">
+                    <span class="news-section-title">🧪 ทดสอบย้อนหลัง (Backtest)</span>
+                    <span id="backtestToggleIcon" class="news-toggle-icon">▼</span>
+                </div>
+                <div id="backtestWrap" class="collapsible-wrap collapsed">
+                    <div class="backtest-controls">
+                        <select id="backtestPeriod" aria-label="ช่วงเวลาย้อนหลัง">
+                            <option value="3mo">3 เดือน</option>
+                            <option value="6mo">6 เดือน</option>
+                            <option value="1y" selected>1 ปี</option>
+                            <option value="2y">2 ปี</option>
+                        </select>
+                        <button class="btn-set-alert" onclick="runBacktest()">รันทดสอบ</button>
+                    </div>
+                    <div id="backtestResults" class="backtest-results">
+                        <div class="news-empty">เลือกช่วงเวลาแล้วกด "รันทดสอบ" เพื่อดูว่าสัญญาณ BUY/HOLD ของแอปนี้แม่นแค่ไหนในอดีตครับ</div>
                     </div>
                 </div>
             </div>
@@ -2326,6 +2419,109 @@
             if (!nowCollapsed && macdChartInstance) {
                 setTimeout(() => macdChartInstance.resize(), 50);
             }
+        }
+
+        function toggleBacktestSection() {
+            const wrap = document.getElementById('backtestWrap');
+            const icon = document.getElementById('backtestToggleIcon');
+            const header = document.getElementById('backtestSectionHeader');
+            const nowCollapsed = !wrap.classList.contains('collapsed');
+            wrap.classList.toggle('collapsed', nowCollapsed);
+            icon.innerText = nowCollapsed ? '▼' : '▲';
+            header.setAttribute('aria-expanded', String(!nowCollapsed));
+        }
+
+        // รัน backtest ของหุ้นที่กำลังเปิดดูอยู่ ตามช่วงเวลาที่เลือก
+        async function runBacktest() {
+            if (!currentTicker) {
+                showToast('กรุณาเปิดหน้าหุ้นก่อนครับ', 'alert');
+                return;
+            }
+            const period = document.getElementById('backtestPeriod').value;
+            const container = document.getElementById('backtestResults');
+            container.innerHTML = `<div class="news-empty">กำลังทดสอบย้อนหลัง...</div>`;
+
+            try {
+                const response = await fetch(`${API_BASE}/backtest/${currentTicker}?period=${period}`);
+                const data = await response.json();
+                if (data.error) {
+                    container.innerHTML = `<div class="news-empty">${data.error}</div>`;
+                    return;
+                }
+                renderBacktestResults(data);
+            } catch (e) {
+                container.innerHTML = `<div class="news-empty">เกิดข้อผิดพลาดในการเชื่อมต่อ ลองใหม่อีกครั้งครับ</div>`;
+            }
+        }
+
+        function renderBacktestResults(data) {
+            const container = document.getElementById('backtestResults');
+
+            if (data.total_trades === 0 && !data.open_position) {
+                container.innerHTML = `<div class="news-empty">ไม่มีสัญญาณซื้อขายเกิดขึ้นเลยในช่วงเวลานี้ครับ (สัญญาณเดิมไม่เปลี่ยนตลอดทั้งช่วง)</div>`;
+                return;
+            }
+
+            const stratColor = data.strategy_total_return_percent >= 0 ? 'up' : 'down';
+            const bhColor = data.buy_hold_return_percent >= 0 ? 'up' : 'down';
+            const betterThanBH = data.strategy_total_return_percent > data.buy_hold_return_percent;
+            const stratSign = data.strategy_total_return_percent > 0 ? '+' : '';
+            const bhSign = data.buy_hold_return_percent > 0 ? '+' : '';
+
+            let html = `
+                <div class="backtest-stats">
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-value">${data.total_trades}</div>
+                        <div class="backtest-stat-label">จำนวนครั้งที่เทรด</div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-value">${data.win_rate_percent ?? '-'}%</div>
+                        <div class="backtest-stat-label">Win Rate (${data.win_count} ชนะ / ${data.loss_count} แพ้)</div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-value ${stratColor}">${stratSign}${data.strategy_total_return_percent}%</div>
+                        <div class="backtest-stat-label">ผลตอบแทนตามสัญญาณ (รวม)</div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-value ${bhColor}">${bhSign}${data.buy_hold_return_percent}%</div>
+                        <div class="backtest-stat-label">ซื้อแล้วถือยาวเฉยๆ (เทียบ)</div>
+                    </div>
+                </div>
+            `;
+
+            if (data.total_trades > 0) {
+                html += `<div class="backtest-compare-note">${betterThanBH
+                    ? '✅ สัญญาณ BUY/HOLD ของแอปนี้ให้ผลตอบแทนดีกว่าซื้อแล้วถือยาวเฉยๆ ในช่วงเวลานี้'
+                    : '⚠️ ซื้อแล้วถือยาวเฉยๆ ให้ผลตอบแทนดีกว่าสัญญาณ BUY/HOLD ของแอปนี้ในช่วงเวลานี้'}</div>`;
+            }
+
+            if (data.open_position) {
+                const op = data.open_position;
+                const opColor = op.unrealized_return_percent >= 0 ? 'up' : 'down';
+                const opSign = op.unrealized_return_percent > 0 ? '+' : '';
+                html += `<div class="backtest-open-position">📍 ยังถือ position ค้างอยู่ตอนจบช่วงทดสอบ (เข้าซื้อ ${op.entry_date} ที่ $${op.entry_price}) —
+                    กำไร/ขาดทุนล่าสุด: <span class="${opColor}">${opSign}${op.unrealized_return_percent}%</span></div>`;
+            }
+
+            if (data.trades && data.trades.length > 0) {
+                html += `<div class="backtest-trades-title">ประวัติการเทรดล่าสุด (${data.trades.length} ครั้ง)</div>`;
+                html += `<div class="backtest-trades-list">`;
+                const recentTrades = [...data.trades].reverse().slice(0, 20);
+                recentTrades.forEach(t => {
+                    const color = t.is_win ? 'up' : 'down';
+                    const icon = t.is_win ? '✅' : '❌';
+                    const sign = t.return_percent > 0 ? '+' : '';
+                    html += `<div class="backtest-trade-row">
+                        <span>${icon} ${t.entry_date} → ${t.exit_date}</span>
+                        <span class="${color}">${sign}${t.return_percent}%</span>
+                    </div>`;
+                });
+                html += `</div>`;
+            }
+
+            html += `<div class="backtest-disclaimer">⚠️ ผลย้อนหลังไม่ได้การันตีผลในอนาคต เป็นแค่การจำลองสัญญาณเดิมกับข้อมูลราคาที่ผ่านมาเท่านั้น ไม่ใช่คำแนะนำการลงทุน</div>`;
+
+            container.innerHTML = html;
         }
 
         function toggleAlertSetterSection() {

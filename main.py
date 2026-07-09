@@ -701,6 +701,124 @@ def get_stock_news(ticker: str):
         return {"error": str(e), "news": []}
 
 
+# ========= Backtest: จำลองสัญญาณ BUY/HOLD เดิม (EMA10 ตัด EMA20) กับข้อมูลราคาย้อนหลัง =========
+# เพื่อวัดว่าสัญญาณที่แอปใช้อยู่ตอนนี้ "แม่น" แค่ไหนในอดีต ก่อนจะปรับปรุงอะไรเพิ่ม
+BACKTEST_CACHE_TTL = 3600  # 1 ชั่วโมง (ข้อมูลย้อนหลังไม่เปลี่ยนบ่อยในระยะสั้น)
+VALID_BACKTEST_PERIODS = {"3mo", "6mo", "1y", "2y"}
+
+
+@app.get("/backtest/{ticker}")
+def run_backtest(ticker: str, period: str = "1y"):
+    ticker_upper = ticker.upper()
+    if period not in VALID_BACKTEST_PERIODS:
+        period = "1y"
+
+    cache_key = f"backtest:{ticker_upper}:{period}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        stock = yf.Ticker(ticker_upper)
+        df = stock.history(period=period, interval="1d")
+
+        if df.empty or len(df) < 25:
+            return {"error": "ข้อมูลไม่พอสำหรับทดสอบย้อนหลัง (ต้องการอย่างน้อย ~25 วันทำการ)"}
+
+        close = df['Close'].dropna()
+        ema10 = close.ewm(span=10, adjust=False).mean()
+        ema20 = close.ewm(span=20, adjust=False).mean()
+        is_buy_signal = ema10 > ema20  # True = BUY, False = HOLD (สูตรเดียวกับที่แอปใช้จริง)
+
+        dates = close.index
+        trades = []
+        holding = False
+        entry_price = None
+        entry_date = None
+
+        # เดินไล่ทีละวัน: เข้าซื้อตอนสัญญาณเปลี่ยนเป็น BUY, ขายตอนสัญญาณเปลี่ยนกลับเป็น HOLD
+        for i in range(len(close)):
+            sig_buy = bool(is_buy_signal.iloc[i])
+            price = float(close.iloc[i])
+            date_str = dates[i].strftime('%Y-%m-%d')
+
+            if not holding and sig_buy:
+                holding = True
+                entry_price = price
+                entry_date = date_str
+            elif holding and not sig_buy:
+                exit_price = price
+                return_pct = round((exit_price - entry_price) / entry_price * 100, 2)
+                trades.append({
+                    "entry_date": entry_date,
+                    "entry_price": round(entry_price, 2),
+                    "exit_date": date_str,
+                    "exit_price": round(exit_price, 2),
+                    "return_percent": return_pct,
+                    "is_win": return_pct > 0
+                })
+                holding = False
+                entry_price = None
+                entry_date = None
+
+        # ถ้ายังถือ position ค้างอยู่ตอนจบช่วงเวลาที่ทดสอบ ไม่นับเป็น trade ที่จบแล้ว
+        # แต่รายงานแยกไว้ต่างหากว่า "ยังเปิดอยู่ กำไร/ขาดทุนล่าสุดเท่าไหร่"
+        open_position = None
+        if holding:
+            last_price = float(close.iloc[-1])
+            unrealized_pct = round((last_price - entry_price) / entry_price * 100, 2)
+            open_position = {
+                "entry_date": entry_date,
+                "entry_price": round(entry_price, 2),
+                "current_price": round(last_price, 2),
+                "unrealized_return_percent": unrealized_pct
+            }
+
+        total_trades = len(trades)
+        win_count = sum(1 for t in trades if t["is_win"])
+        loss_count = total_trades - win_count
+        win_rate = round((win_count / total_trades) * 100, 1) if total_trades > 0 else None
+        avg_return = round(sum(t["return_percent"] for t in trades) / total_trades, 2) if total_trades > 0 else None
+
+        # ผลตอบแทนรวมแบบทบต้น: เข้า-ออกตามสัญญาณต่อเนื่องกันไปเรื่อยๆ
+        strategy_multiplier = 1.0
+        for t in trades:
+            strategy_multiplier *= (1 + t["return_percent"] / 100)
+        strategy_total_return = round((strategy_multiplier - 1) * 100, 2)
+
+        # เทียบกับ "ซื้อแล้วถือยาวเฉยๆ" ในช่วงเวลาเดียวกัน (baseline มาตรฐานที่ใช้เทียบกลยุทธ์เสมอ)
+        first_close = float(close.iloc[0])
+        last_close_price = float(close.iloc[-1])
+        buy_hold_return = round((last_close_price - first_close) / first_close * 100, 2)
+
+        result = {
+            "ticker": ticker_upper,
+            "period": period,
+            "data_points": len(close),
+            "total_trades": total_trades,
+            "win_count": win_count,
+            "loss_count": loss_count,
+            "win_rate_percent": win_rate,
+            "avg_return_percent": avg_return,
+            "strategy_total_return_percent": strategy_total_return,
+            "buy_hold_return_percent": buy_hold_return,
+            "open_position": open_position,
+            "trades": trades
+        }
+
+        cache_set(cache_key, result, BACKTEST_CACHE_TTL)
+        return result
+
+    except Exception as e:
+        stale = cache_get(cache_key, allow_stale=True)
+        if stale is not None and not stale.get("error"):
+            stale_copy = dict(stale)
+            stale_copy["is_stale"] = True
+            stale_copy["stale_age_seconds"] = round(cache_age_seconds(cache_key) or 0)
+            return stale_copy
+        return {"error": str(e)}
+
+
 # 🔵 โหมดเดิม: สแกนหาหุ้นสัญญาณ BUY เท่านั้น
 @app.get("/screener")
 async def run_screener():
