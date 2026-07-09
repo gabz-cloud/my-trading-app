@@ -472,27 +472,28 @@
         .heatmap-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; }
         .heatmap-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
         .heatmap-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-            gap: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
         }
         .heatmap-tile {
-            aspect-ratio: 1 / 1;
-            border-radius: 8px;
+            border-radius: 50%;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 6px;
             cursor: pointer;
             color: #ffffff;
             text-align: center;
+            flex-shrink: 0;
             transition: transform 0.15s, box-shadow 0.15s;
+            overflow: hidden;
         }
-        .heatmap-tile:hover { transform: scale(1.06); z-index: 2; box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
-        .heatmap-tile-logo { width: 22px; height: 22px; border-radius: 5px; background: #fff; margin-bottom: 3px; object-fit: contain; padding: 2px; }
-        .heatmap-tile-ticker { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
-        .heatmap-tile-change { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10.5px; margin-top: 2px; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        .heatmap-tile:hover { transform: scale(1.08); z-index: 2; box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
+        .heatmap-tile-ticker { font-family: 'JetBrains Mono', monospace; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.3); line-height: 1.2; }
+        .heatmap-tile-change { font-family: 'JetBrains Mono', monospace; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.3); line-height: 1.2; margin-top: 1px; }
 
         .digest-header {
             display: flex;
@@ -1235,10 +1236,7 @@
             .price { font-size: 32px; }
             .digest-title { font-size: 14px; }
 
-            .heatmap-grid { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 4px; }
-            .heatmap-tile-ticker { font-size: 10.5px; }
-            .heatmap-tile-change { font-size: 9px; }
-            .heatmap-tile-logo { width: 18px; height: 18px; }
+            .heatmap-grid { gap: 6px; }
 
             /* ตารางสแกน: ซ่อนคอลัมน์ "อันดับ" กับ "โลโก้" (ข้อมูลสำคัญน้อยสุด)
                ที่เหลือ (เปรียบเทียบ/ดาว/ชื่อหุ้น/ราคา/แนวรับ/สัญญาณ) พอดีจอ ไม่ต้องเลื่อนซ้ายขวาอีก */
@@ -1482,7 +1480,7 @@
         <section id="heatmapCard" class="card heatmap-card">
             <div class="heatmap-header">
                 <div class="heatmap-title">🗺️ ภาพรวมตลาด</div>
-                <div class="heatmap-subtitle">สีเขียว = ราคาขึ้น, สีแดง = ราคาลง — ยิ่งเข้มยิ่งเปลี่ยนแปลงมาก (แตะเพื่อดูรายละเอียด)</div>
+                <div class="heatmap-subtitle">สีเขียว = ขึ้น, สีแดง = ลง (ยิ่งเข้มยิ่งเปลี่ยนแปลงมาก) — วงยิ่งใหญ่ = ขยับแรงยิ่งขึ้น (แตะเพื่อดูรายละเอียด)</div>
             </div>
             <div id="heatmapGrid" class="heatmap-grid">
                 <div class="news-empty">กำลังโหลดข้อมูล...</div>
@@ -2894,6 +2892,14 @@
             }
         }
 
+        // ขนาดฟองสบู่ตาม "ความแรง" ของการเปลี่ยนแปลง (|% เปลี่ยนแปลง|) เพราะไม่มีข้อมูล market cap
+        // ให้แปรผันขนาดตาม — ยิ่งขยับแรง (บวกหรือลบ) ยิ่งวงใหญ่ ไม่ขึ้นกับทิศทาง
+        function heatmapBubbleSize(pct) {
+            const abs = typeof pct === 'number' ? Math.min(Math.abs(pct), 10) : 0;
+            const minSize = 62, maxSize = 128;
+            return Math.round(minSize + (abs / 10) * (maxSize - minSize));
+        }
+
         function renderHeatmap() {
             const grid = document.getElementById('heatmapGrid');
             if (!grid) return;
@@ -2914,10 +2920,12 @@
                 const pct = typeof stock.change_percent === 'number' ? stock.change_percent : null;
                 const pctText = pct !== null ? `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%` : '-';
                 const bgColor = heatmapColor(pct);
-                return `<div class="heatmap-tile" style="background-color:${bgColor};" onclick="openStockFromTable('${stock.ticker}')" title="${stock.ticker}: ${pctText}">
-                    <img class="heatmap-tile-logo" src="${getLocalLogoUrl(stock.ticker)}" onerror="this.style.display='none'" alt="">
-                    <div class="heatmap-tile-ticker">${stock.ticker}</div>
-                    <div class="heatmap-tile-change">${pctText}</div>
+                const size = heatmapBubbleSize(pct);
+                const tickerFontSize = Math.max(9, Math.min(15, Math.round(size * 0.16)));
+                const changeFontSize = Math.max(8, Math.min(12, Math.round(size * 0.12)));
+                return `<div class="heatmap-tile" style="background-color:${bgColor}; width:${size}px; height:${size}px;" onclick="openStockFromTable('${stock.ticker}')" title="${stock.ticker}: ${pctText}">
+                    <div class="heatmap-tile-ticker" style="font-size:${tickerFontSize}px;">${stock.ticker}</div>
+                    <div class="heatmap-tile-change" style="font-size:${changeFontSize}px;">${pctText}</div>
                 </div>`;
             }).join('');
         }
