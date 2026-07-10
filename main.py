@@ -54,18 +54,37 @@ def debug_extended_hours(ticker: str):
             "postMarketPrice", "postMarketChange", "postMarketChangePercent",
             "regularMarketPrice", "regularMarketTime"
         ]
+        # ค้นหาฟิลด์ไหนก็ตามที่ชื่อมีคำว่า "overnight"/"extended"/"night" ปนอยู่ (ไม่รู้ชื่อฟิลด์แน่ชัด
+        # เลยลองกรองแบบกว้างๆ ดูว่า yfinance เก็บข้อมูลเซสชัน "Overnight" ที่เห็นบนเว็บ Yahoo ไว้ที่ไหนบ้างไหม)
+        possible_overnight_keys = {
+            k: v for k, v in info.items()
+            if any(word in k.lower() for word in ["overnight", "extended", "postmarket", "premarket"])
+        }
         result["yfinance"] = {
             "info_fetch_succeeded": True,
             "relevant_fields": {k: info.get(k) for k in keys_to_check},
-            "total_fields_in_info": len(info)
+            "possible_overnight_related_fields": possible_overnight_keys,
+            "total_fields_in_info": len(info),
+            "all_field_names": sorted(info.keys())
         }
     except Exception as e:
         result["yfinance"] = {"info_fetch_succeeded": False, "error": repr(e)}
 
+    finnhub_result = fetch_finnhub_price(ticker_upper)
     result["finnhub"] = {
         "api_key_configured": bool(FINNHUB_API_KEY),
-        "result": fetch_finnhub_price(ticker_upper)
+        "result": finnhub_result
     }
+
+    if finnhub_result and isinstance(finnhub_result.get("quote_timestamp"), (int, float)):
+        qt = finnhub_result["quote_timestamp"]
+        age = round(time.time() - qt)
+        result["finnhub"]["quote_time_readable_utc"] = datetime.utcfromtimestamp(qt).strftime("%Y-%m-%d %H:%M:%S UTC")
+        result["finnhub"]["quote_age_seconds"] = age
+        result["finnhub"]["note"] = (
+            "ถ้า quote_age_seconds มีค่าสูงมาก (หลายนาที/ชั่วโมงขึ้นไป) แปลว่าราคานี้ไม่ใช่ราคาสด "
+            "เป็นราคาเทรดล่าสุดที่ Finnhub มีอยู่ ซึ่งอาจเก่ากว่าที่คิด (เช่น ราคาปิดตลาดปกติ ไม่ใช่ราคานอกเวลาจริง)"
+        )
 
     result["calculated_market_state"] = calculate_market_state()
     result["note"] = "แอปตอนนี้ใช้ calculated_market_state (คำนวณเอง ไม่พึ่ง yfinance) เป็นตัวตัดสินจริง ไม่ใช่ yfinance.marketState ด้านบนอีกต่อไป"
@@ -133,6 +152,7 @@ def fetch_finnhub_price(ticker: str):
 
         current_price = data.get("c")
         prev_close = data.get("pc")
+        quote_timestamp = data.get("t")  # Unix epoch วินาที ของเวลาที่เกิดการเทรดล่าสุดจริงตาม Finnhub
 
         # Finnhub คืนค่า 0 ทุกฟิลด์เวลาหา ticker ไม่เจอ หรือ token ผิด แทนที่จะ error ตรงๆ
         if not isinstance(current_price, (int, float)) or current_price == 0:
@@ -147,7 +167,8 @@ def fetch_finnhub_price(ticker: str):
         return {
             "price": round(float(current_price), 2),
             "change": change,
-            "change_percent": change_percent
+            "change_percent": change_percent,
+            "quote_timestamp": quote_timestamp
         }
     except Exception as e:
         print(f"[finnhub] {ticker}: ดึงข้อมูลไม่สำเร็จ -> {repr(e)}")
@@ -575,6 +596,8 @@ def get_stock_data(ticker: str, tf: str = "1d"):
         post_market_change = None
         post_market_change_percent = None
         extended_hours_source = None
+        extended_hours_quote_timestamp = None
+        extended_hours_quote_age_seconds = None
 
         if market_state == "PRE":
             finnhub_data = fetch_finnhub_price(ticker_upper)
@@ -583,6 +606,9 @@ def get_stock_data(ticker: str, tf: str = "1d"):
                 pre_market_change = finnhub_data["change"]
                 pre_market_change_percent = finnhub_data["change_percent"]
                 extended_hours_source = "finnhub"
+                extended_hours_quote_timestamp = finnhub_data.get("quote_timestamp")
+                if isinstance(extended_hours_quote_timestamp, (int, float)):
+                    extended_hours_quote_age_seconds = round(time.time() - extended_hours_quote_timestamp)
             print(f"[extended-hours] {ticker_upper}: state=PRE (คำนวณเอง), finnhub={finnhub_data}")
         elif market_state == "POST":
             finnhub_data = fetch_finnhub_price(ticker_upper)
@@ -591,6 +617,9 @@ def get_stock_data(ticker: str, tf: str = "1d"):
                 post_market_change = finnhub_data["change"]
                 post_market_change_percent = finnhub_data["change_percent"]
                 extended_hours_source = "finnhub"
+                extended_hours_quote_timestamp = finnhub_data.get("quote_timestamp")
+                if isinstance(extended_hours_quote_timestamp, (int, float)):
+                    extended_hours_quote_age_seconds = round(time.time() - extended_hours_quote_timestamp)
             print(f"[extended-hours] {ticker_upper}: state=POST (คำนวณเอง), finnhub={finnhub_data}")
 
         # ===== ข้อมูลเต็มช่วงเวลา สำหรับวาดกราฟ RSI/MACD ใต้กราฟราคาหลัก =====
@@ -621,6 +650,8 @@ def get_stock_data(ticker: str, tf: str = "1d"):
             "post_market_change": post_market_change,
             "post_market_change_percent": post_market_change_percent,
             "extended_hours_source": extended_hours_source,
+            "extended_hours_quote_timestamp": extended_hours_quote_timestamp,
+            "extended_hours_quote_age_seconds": extended_hours_quote_age_seconds,
             "chart_data": chart_data,
             "chart_dates": chart_dates,
             "rsi": analysis["rsi"],
