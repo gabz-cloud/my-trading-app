@@ -851,7 +851,8 @@ ENTRY_EXIT_PERIOD_MAP = {"1m": "1d", "5m": "5d", "15m": "5d", "30m": "30d", "1h"
 
 
 @app.get("/entry-exit/{ticker}")
-def analyze_entry_exit(ticker: str, tf: str = "1d", account_size: float = 10000.0, risk_percent: float = 1.0):
+def analyze_entry_exit(ticker: str, tf: str = "1d", account_size: float = 10000.0, risk_percent: float = 1.0,
+                        sl_atr_mult: float = 2.0, tp_atr_mult: float = 3.0):
     ticker_upper = ticker.upper()
     if tf not in ENTRY_EXIT_INTERVAL_MAP:
         tf = "1d"
@@ -859,8 +860,12 @@ def analyze_entry_exit(ticker: str, tf: str = "1d", account_size: float = 10000.
         account_size = 10000.0
     if risk_percent <= 0 or risk_percent > 100:
         risk_percent = 1.0
+    if sl_atr_mult <= 0 or sl_atr_mult > 10:
+        sl_atr_mult = 2.0
+    if tp_atr_mult <= 0 or tp_atr_mult > 10:
+        tp_atr_mult = 3.0
 
-    cache_key = f"entry-exit:{ticker_upper}:{tf}:{account_size}:{risk_percent}"
+    cache_key = f"entry-exit:{ticker_upper}:{tf}:{account_size}:{risk_percent}:{sl_atr_mult}:{tp_atr_mult}"
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
@@ -948,15 +953,15 @@ def analyze_entry_exit(ticker: str, tf: str = "1d", account_size: float = 10000.
             entry_strength = "none"
 
         # จุด stop-loss / take-profit อิงจาก ATR (ความผันผวนจริงของหุ้นตัวนี้)
-        # ใช้ 2×ATR เป็นระยะตัดขาดทุน, 3×ATR เป็นเป้าทำกำไร (risk:reward ~1:1.5 เป็นอย่างต่ำ)
+        # ปรับตัวคูณเองได้ผ่าน sl_atr_mult/tp_atr_mult (ค่าเริ่มต้น 2×/3× เหมือนเดิม)
         # ให้รู้จุดออกล่วงหน้าชัดเจนตั้งแต่ก่อนเข้า ไม่ต้องรอสัญญาณ lag แบบ EMA crossover เพียงอย่างเดียว
         stop_loss = None
         take_profit = None
         risk_reward_ratio = None
         position_sizing = None
         if atr_value is not None and atr_value > 0:
-            stop_loss = round(current_price - 2 * atr_value, 2)
-            take_profit = round(current_price + 3 * atr_value, 2)
+            stop_loss = round(current_price - sl_atr_mult * atr_value, 2)
+            take_profit = round(current_price + tp_atr_mult * atr_value, 2)
             risk_per_share = current_price - stop_loss
             reward_per_share = take_profit - current_price
             if risk_per_share > 0:
@@ -989,6 +994,8 @@ def analyze_entry_exit(ticker: str, tf: str = "1d", account_size: float = 10000.
             "atr": round(atr_value, 2) if atr_value is not None else None,
             "suggested_stop_loss": stop_loss,
             "suggested_take_profit": take_profit,
+            "sl_atr_mult": sl_atr_mult,
+            "tp_atr_mult": tp_atr_mult,
             "risk_reward_ratio": risk_reward_ratio,
             "position_sizing": position_sizing,
             "is_stale": False
@@ -1074,7 +1081,7 @@ def _simulate_simple_strategy(df, date_fmt='%Y-%m-%d'):
     return trades, open_position
 
 
-def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d'):
+def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d', sl_atr_mult=2.0, tp_atr_mult=3.0):
     """
     ตรรกะเดียวกับหน้า 'จุดเข้า-ออก': เข้าเมื่อผ่านอย่างน้อย 4 ใน 5 เงื่อนไข
     (เทรนด์ + ADX≥20 + RSI<70 + MACD บวก + Volume>เฉลี่ย20แท่ง) และมี ATR คำนวณได้
@@ -1125,8 +1132,8 @@ def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d'):
                 holding = True
                 entry_price = price
                 entry_date = date_str
-                stop_loss = entry_price - 2 * atr_value
-                take_profit = entry_price + 3 * atr_value
+                stop_loss = entry_price - sl_atr_mult * atr_value
+                take_profit = entry_price + tp_atr_mult * atr_value
 
         else:
             hit_stop = price <= stop_loss
@@ -1163,12 +1170,17 @@ def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d'):
 
 
 @app.get("/backtest/{ticker}")
-def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple", tf: str = "1d"):
+def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple", tf: str = "1d",
+                  sl_atr_mult: float = 2.0, tp_atr_mult: float = 3.0):
     ticker_upper = ticker.upper()
     if tf not in BACKTEST_TF_CONFIG:
         tf = "1d"
     if strategy not in VALID_BACKTEST_STRATEGIES:
         strategy = "simple"
+    if sl_atr_mult <= 0 or sl_atr_mult > 10:
+        sl_atr_mult = 2.0
+    if tp_atr_mult <= 0 or tp_atr_mult > 10:
+        tp_atr_mult = 3.0
 
     tf_config = BACKTEST_TF_CONFIG[tf]
     if period not in tf_config["periods"]:
@@ -1179,7 +1191,7 @@ def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple", tf: 
     interval = tf_config["interval"]
     date_fmt = tf_config["date_fmt"]
 
-    cache_key = f"backtest:{ticker_upper}:{period}:{strategy}:{tf}"
+    cache_key = f"backtest:{ticker_upper}:{period}:{strategy}:{tf}:{sl_atr_mult}:{tp_atr_mult}"
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
@@ -1194,7 +1206,7 @@ def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple", tf: 
         close = df['Close'].dropna()
 
         if strategy == "advanced":
-            trades, open_position = _simulate_advanced_strategy(df, date_fmt=date_fmt)
+            trades, open_position = _simulate_advanced_strategy(df, date_fmt=date_fmt, sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult)
         else:
             trades, open_position = _simulate_simple_strategy(df, date_fmt=date_fmt)
 
@@ -1225,6 +1237,8 @@ def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple", tf: 
             "period": period,
             "timeframe": tf,
             "strategy": strategy,
+            "sl_atr_mult": sl_atr_mult,
+            "tp_atr_mult": tp_atr_mult,
             "data_points": len(close),
             "total_trades": total_trades,
             "win_count": win_count,
