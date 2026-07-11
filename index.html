@@ -312,6 +312,63 @@
         .indicators-section { margin-top: 24px; }
         .backtest-section { margin-top: 24px; }
         .entry-exit-section { margin-top: 24px; }
+        .paper-bot-section { margin-top: 24px; }
+
+        .pb-status-banner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 13px;
+            margin-bottom: 14px;
+        }
+        .pb-status-banner.active { background: rgba(58, 214, 143, 0.12); border: 1px solid rgba(58, 214, 143, 0.3); color: var(--up-color); }
+        .pb-status-banner.inactive { background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-muted); }
+
+        .pb-config-line { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.6; }
+
+        .pb-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .pb-stat-box {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 8px;
+            text-align: center;
+        }
+        .pb-stat-value { font-family: 'JetBrains Mono', monospace; font-size: 17px; font-weight: 700; }
+        .pb-stat-value.up { color: var(--up-color); }
+        .pb-stat-value.down { color: var(--down-color); }
+        .pb-stat-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
+
+        .pb-position-box {
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: rgba(232, 179, 76, 0.08);
+            border: 1px solid rgba(232, 179, 76, 0.25);
+            font-size: 12.5px;
+            margin-bottom: 14px;
+            line-height: 1.6;
+        }
+        .pb-last-check {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+            padding: 8px 10px;
+            background: var(--input-bg);
+            border-radius: 8px;
+        }
+        .pb-action-buttons { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .btn-pb-start { padding: 10px 18px; border-radius: 8px; background: var(--up-color); color: #06341d; font-weight: 700; font-size: 13px; }
+        .btn-pb-stop { padding: 10px 18px; border-radius: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); font-weight: 700; font-size: 13px; }
+        .btn-pb-reset { padding: 10px 18px; border-radius: 8px; background: rgba(240, 90, 90, 0.12); border: 1px solid rgba(240, 90, 90, 0.3); color: var(--down-color); font-weight: 700; font-size: 13px; }
+
 
         .entry-exit-controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: flex-end; }
         .labeled-input-group { display: flex; flex-direction: column; gap: 4px; }
@@ -1689,6 +1746,21 @@
                 </div>
             </div>
 
+            <div class="paper-bot-section">
+                <div class="news-section-header" role="button" tabindex="0" id="paperBotSectionHeader"
+                    aria-expanded="false" aria-controls="paperBotWrap" aria-label="ย่อ/ขยาย Paper Trading Bot"
+                    onclick="togglePaperBotSection()"
+                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePaperBotSection();}">
+                    <span class="news-section-title">🤖 Paper Trading Bot (จำลองเทรดด้วยเงินปลอม)</span>
+                    <span id="paperBotToggleIcon" class="news-toggle-icon">▼</span>
+                </div>
+                <div id="paperBotWrap" class="collapsible-wrap collapsed">
+                    <div id="paperBotContent">
+                        <div class="news-empty">กำลังโหลดสถานะบอท...</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="entry-exit-section">
                 <div class="news-section-header" role="button" tabindex="0" id="entryExitSectionHeader"
                     aria-expanded="false" aria-controls="entryExitWrap" aria-label="ย่อ/ขยายจุดเข้า-ออก"
@@ -2638,6 +2710,239 @@
             // เผื่อ Chart.js คำนวณขนาดผิดตอนเพิ่งเปิดออกมาจาก display:none
             if (!nowCollapsed && macdChartInstance) {
                 setTimeout(() => macdChartInstance.resize(), 50);
+            }
+        }
+
+        // ========= Paper Trading Bot =========
+        const PAPER_BOT_EXIT_REASON_TH = {
+            stop_loss: 'โดน Stop Loss',
+            take_profit: 'ถึง Take Profit',
+            trend_reversal: 'เทรนด์กลับตัว'
+        };
+
+        function togglePaperBotSection() {
+            const wrap = document.getElementById('paperBotWrap');
+            const icon = document.getElementById('paperBotToggleIcon');
+            const header = document.getElementById('paperBotSectionHeader');
+            const nowCollapsed = !wrap.classList.contains('collapsed');
+            wrap.classList.toggle('collapsed', nowCollapsed);
+            icon.innerText = nowCollapsed ? '▼' : '▲';
+            header.setAttribute('aria-expanded', String(!nowCollapsed));
+            if (!nowCollapsed) loadPaperBotStatus();
+        }
+
+        async function loadPaperBotStatus() {
+            const container = document.getElementById('paperBotContent');
+            try {
+                const response = await fetch(`${API_BASE}/paper-bot/status`);
+                const data = await response.json();
+                renderPaperBotUI(data);
+            } catch (e) {
+                container.innerHTML = `<div class="news-empty">เกิดข้อผิดพลาดในการเชื่อมต่อ ลองใหม่อีกครั้งครับ</div>`;
+            }
+        }
+
+        function renderPaperBotUI(data) {
+            const container = document.getElementById('paperBotContent');
+
+            if (!data.ticker) {
+                // ยังไม่เคยตั้งค่าบอทเลย -> โชว์ฟอร์มสร้างบอทใหม่
+                container.innerHTML = `
+                    <div class="control-section-label">🤖 ตั้งค่าบอทใหม่</div>
+                    <div class="entry-exit-controls">
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="paperBotTicker">หุ้น</label>
+                            <input type="text" id="paperBotTicker" class="toolbar-num" placeholder="เช่น AAPL" style="text-transform:uppercase;">
+                        </div>
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="paperBotCapital">เงินทุนเริ่มต้น ($)</label>
+                            <input type="number" id="paperBotCapital" class="toolbar-num" value="10000" min="1">
+                        </div>
+                    </div>
+                    <div class="entry-exit-controls">
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="paperBotTf">ไทม์เฟรม</label>
+                            <select id="paperBotTf">
+                                <option value="1h">1 ชั่วโมง</option>
+                                <option value="1d" selected>1 วัน</option>
+                            </select>
+                        </div>
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="paperBotStrategy">กลยุทธ์</label>
+                            <select id="paperBotStrategy">
+                                <option value="simple">แบบเดิม (EMA)</option>
+                                <option value="advanced" selected>แบบใหม่ (5 เงื่อนไข)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="entry-exit-controls">
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="paperBotRiskPercent">เสี่ยง %/ไม้</label>
+                            <input type="number" id="paperBotRiskPercent" class="toolbar-num" value="1" min="0.1" max="100" step="0.1">
+                        </div>
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="paperBotSlMult">SL (×ATR)</label>
+                            <input type="number" id="paperBotSlMult" class="toolbar-num" value="2" min="0.1" max="10" step="0.1">
+                        </div>
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="paperBotTpMult">TP (×ATR)</label>
+                            <input type="number" id="paperBotTpMult" class="toolbar-num" value="3" min="0.1" max="10" step="0.1">
+                        </div>
+                    </div>
+                    <button class="btn-set-alert" onclick="createPaperBotHandler()">สร้างบอท</button>
+                    <div class="ee-disclaimer" style="margin-top:12px;">⚠️ นี่คือการจำลองด้วย "เงินปลอม" เท่านั้น ไม่ใช่การเทรดเงินจริง บอทเช็คและตัดสินใจเองทุก 15 นาที แม้ปิดแอปอยู่ก็ยังทำงานต่อ (ยกเว้น Render หลับ) ข้อมูลอาจหายได้ถ้า deploy ใหม่ ไม่ใช่คำแนะนำการลงทุน</div>
+                `;
+                return;
+            }
+
+            const isActive = data.is_active;
+            const statusClass = isActive ? 'active' : 'inactive';
+            const statusText = isActive ? '🟢 บอทกำลังทำงานอยู่' : '⏸️ บอทหยุดอยู่';
+
+            const equityColor = data.total_return_percent >= 0 ? 'up' : 'down';
+            const equitySign = data.total_return_percent > 0 ? '+' : '';
+
+            let html = `<div class="pb-status-banner ${statusClass}">${statusText}</div>`;
+
+            html += `<div class="pb-config-line">
+                📈 หุ้น: <b>${data.ticker}</b> &nbsp;|&nbsp; ⏱️ ไทม์เฟรม: ${data.timeframe} &nbsp;|&nbsp;
+                🎯 กลยุทธ์: ${data.strategy === 'advanced' ? 'แบบใหม่ (5 เงื่อนไข)' : 'แบบเดิม (EMA)'} &nbsp;|&nbsp;
+                SL/TP: ${data.sl_atr_mult}×/${data.tp_atr_mult}×ATR &nbsp;|&nbsp; เสี่ยง ${data.risk_percent}%/ไม้
+            </div>`;
+
+            html += `
+                <div class="pb-stats">
+                    <div class="pb-stat-box">
+                        <div class="pb-stat-value">$${data.current_equity}</div>
+                        <div class="pb-stat-label">Equity รวม</div>
+                    </div>
+                    <div class="pb-stat-box">
+                        <div class="pb-stat-value ${equityColor}">${equitySign}${data.total_return_percent}%</div>
+                        <div class="pb-stat-label">ผลตอบแทนรวม</div>
+                    </div>
+                    <div class="pb-stat-box">
+                        <div class="pb-stat-value">$${data.cash}</div>
+                        <div class="pb-stat-label">เงินสดคงเหลือ</div>
+                    </div>
+                </div>
+            `;
+
+            if (data.shares_held > 0) {
+                const pnlColor = (data.unrealized_pnl_percent ?? 0) >= 0 ? 'up' : 'down';
+                const pnlSign = (data.unrealized_pnl_percent ?? 0) > 0 ? '+' : '';
+                html += `<div class="pb-position-box">
+                    📦 ถือหุ้นอยู่: <b>${data.shares_held} หุ้น</b> ที่ราคาเข้า $${data.avg_entry_price}
+                    (ตอนนี้ ${data.current_price !== null ? '$' + data.current_price : '-'},
+                    <span class="${pnlColor}">${pnlSign}${data.unrealized_pnl_percent ?? '-'}%</span>) &nbsp;|&nbsp;
+                    SL: $${data.current_stop_loss} &nbsp; TP: $${data.current_take_profit}
+                </div>`;
+            } else {
+                html += `<div class="pb-position-box">💤 ตอนนี้ไม่ได้ถือหุ้นอยู่ กำลังรอสัญญาณเข้าซื้อ</div>`;
+            }
+
+            if (data.last_checked_at) {
+                const checkedTime = new Date(data.last_checked_at).toLocaleString('th-TH');
+                html += `<div class="pb-last-check">🕒 เช็คล่าสุด: ${checkedTime}<br>${data.last_check_note || '-'}</div>`;
+            }
+
+            html += `<div class="pb-action-buttons">`;
+            if (isActive) {
+                html += `<button class="btn-pb-stop" onclick="stopPaperBotHandler()">⏸️ หยุดบอท</button>`;
+            } else {
+                html += `<button class="btn-pb-start" onclick="startPaperBotHandler()">▶️ เริ่มบอท</button>`;
+            }
+            html += `<button class="btn-pb-reset" onclick="resetPaperBotHandler()">🔄 รีเซ็ต (ลบทั้งหมด)</button>`;
+            html += `</div>`;
+
+            if (data.trades && data.trades.length > 0) {
+                html += `<div class="backtest-trades-title-row">
+                    <span class="backtest-trades-title">ประวัติการเทรดจริง (${data.trades.length} ครั้ง)</span>
+                </div>`;
+                html += `<div class="backtest-trades-list">`;
+                const recentTrades = [...data.trades].reverse().slice(0, 20);
+                recentTrades.forEach(t => {
+                    const color = t.is_win ? 'up' : 'down';
+                    const icon = t.is_win ? '✅' : '❌';
+                    const sign = t.return_percent > 0 ? '+' : '';
+                    const entryDate = new Date(t.entry_date).toLocaleDateString('th-TH');
+                    const exitDate = new Date(t.exit_date).toLocaleDateString('th-TH');
+                    html += `<div class="backtest-trade-row">
+                        <span>${icon} ${entryDate} → ${exitDate} (${t.shares} หุ้น)</span>
+                        <span class="${color}">${sign}${t.return_percent}% (${sign}$${t.pnl_amount})</span>
+                    </div>`;
+                });
+                html += `</div>`;
+            }
+
+            html += `<div class="ee-disclaimer" style="margin-top:14px;">⚠️ นี่คือการจำลองด้วย "เงินปลอม" เท่านั้น ไม่ใช่การเทรดเงินจริง ข้อมูลอาจหายได้ถ้า deploy ใหม่ ไม่ใช่คำแนะนำการลงทุน</div>`;
+
+            container.innerHTML = html;
+        }
+
+        async function createPaperBotHandler() {
+            const ticker = document.getElementById('paperBotTicker').value.trim().toUpperCase();
+            if (!ticker) {
+                showToast('กรุณาใส่ชื่อหุ้นครับ', 'alert');
+                return;
+            }
+            const payload = {
+                ticker,
+                initial_capital: parseFloat(document.getElementById('paperBotCapital').value) || 10000,
+                timeframe: document.getElementById('paperBotTf').value,
+                strategy: document.getElementById('paperBotStrategy').value,
+                risk_percent: parseFloat(document.getElementById('paperBotRiskPercent').value) || 1,
+                sl_atr_mult: parseFloat(document.getElementById('paperBotSlMult').value) || 2,
+                tp_atr_mult: parseFloat(document.getElementById('paperBotTpMult').value) || 3
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/paper-bot/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (data.error) {
+                    showToast(data.error, 'alert');
+                    return;
+                }
+                showToast(`สร้างบอทสำหรับ ${ticker} เรียบร้อยแล้ว กด "เริ่มบอท" เพื่อให้ทำงานครับ`, 'info');
+                loadPaperBotStatus();
+            } catch (e) {
+                showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert');
+            }
+        }
+
+        async function startPaperBotHandler() {
+            try {
+                await fetch(`${API_BASE}/paper-bot/start`, { method: 'POST' });
+                showToast('เริ่มบอทแล้วครับ จะเช็คทุก 15 นาที', 'info');
+                loadPaperBotStatus();
+            } catch (e) {
+                showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert');
+            }
+        }
+
+        async function stopPaperBotHandler() {
+            try {
+                await fetch(`${API_BASE}/paper-bot/stop`, { method: 'POST' });
+                showToast('หยุดบอทแล้วครับ (ข้อมูล/ประวัติยังอยู่ครบ)', 'info');
+                loadPaperBotStatus();
+            } catch (e) {
+                showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert');
+            }
+        }
+
+        async function resetPaperBotHandler() {
+            if (!confirm('ลบข้อมูลบอททั้งหมด (ประวัติเทรด, เงินทุน, การตั้งค่า) แล้วเริ่มใหม่ตั้งแต่ต้น? การกระทำนี้ย้อนกลับไม่ได้')) {
+                return;
+            }
+            try {
+                await fetch(`${API_BASE}/paper-bot/reset`, { method: 'POST' });
+                showToast('รีเซ็ตบอทเรียบร้อยแล้วครับ', 'info');
+                loadPaperBotStatus();
+            } catch (e) {
+                showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'alert');
             }
         }
 

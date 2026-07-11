@@ -1499,9 +1499,320 @@ def check_server_alerts_job():
         print("check_server_alerts_job error:", repr(e))
 
 
+# ============================================================
+# Paper Trading Bot — จำลองเทรดด้วยเงินปลอม เดินหน้าไปพร้อมเวลาจริง
+# (ต่างจาก Backtest ที่ย้อนอดีตคำนวณทีเดียวจบ อันนี้ให้บอทตัดสินใจเองไปเรื่อยๆตามเวลาจริง)
+# ⚠️ เก็บข้อมูลเป็นไฟล์ JSON บนดิสก์ของ Render — ข้อมูลจะหายถ้า redeploy/restart service
+# (ดิสก์ของ Render free/starter tier เป็น ephemeral ไม่ถาวรข้าม deploy) ยอมรับข้อจำกัดนี้ไว้ก่อน
+# เพื่อความเรียบง่าย ถ้าใช้จริงจังค่อยย้ายไป database ทีหลังได้
+# ============================================================
+PAPER_BOT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_bot_data.json")
+
+DEFAULT_BOT_STATE = {
+    "is_active": False,
+    "ticker": None,
+    "timeframe": "1d",
+    "strategy": "advanced",
+    "initial_capital": 10000.0,
+    "cash": 10000.0,
+    "shares_held": 0,
+    "avg_entry_price": None,
+    "entry_date_recorded": None,
+    "sl_atr_mult": 2.0,
+    "tp_atr_mult": 3.0,
+    "risk_percent": 1.0,
+    "current_stop_loss": None,
+    "current_take_profit": None,
+    "created_at": None,
+    "last_checked_at": None,
+    "last_check_note": None,
+    "trades": [],
+    "equity_history": []
+}
+
+
+def load_paper_bot_state():
+    if os.path.exists(PAPER_BOT_FILE):
+        try:
+            with open(PAPER_BOT_FILE, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                merged = dict(DEFAULT_BOT_STATE)
+                merged.update(loaded)  # เผื่อโครงสร้างเก่าขาดฟิลด์ใหม่ที่เพิ่งเพิ่ม
+                return merged
+        except Exception:
+            return dict(DEFAULT_BOT_STATE)
+    return dict(DEFAULT_BOT_STATE)
+
+
+def save_paper_bot_state(state):
+    with open(PAPER_BOT_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+@app.post("/paper-bot/create")
+async def create_paper_bot(request: Request):
+    data = await request.json()
+    ticker = str(data.get("ticker", "")).upper().strip()
+    if not ticker:
+        return {"error": "กรุณาระบุชื่อหุ้น"}
+
+    try:
+        initial_capital = float(data.get("initial_capital", 10000))
+    except (TypeError, ValueError):
+        initial_capital = 10000.0
+    if initial_capital <= 0:
+        initial_capital = 10000.0
+
+    timeframe = data.get("timeframe", "1d")
+    if timeframe not in ENTRY_EXIT_INTERVAL_MAP:
+        timeframe = "1d"
+
+    strategy = data.get("strategy", "advanced")
+    if strategy not in VALID_BACKTEST_STRATEGIES:
+        strategy = "advanced"
+
+    try:
+        sl_atr_mult = float(data.get("sl_atr_mult", 2.0))
+    except (TypeError, ValueError):
+        sl_atr_mult = 2.0
+    if sl_atr_mult <= 0 or sl_atr_mult > 10:
+        sl_atr_mult = 2.0
+
+    try:
+        tp_atr_mult = float(data.get("tp_atr_mult", 3.0))
+    except (TypeError, ValueError):
+        tp_atr_mult = 3.0
+    if tp_atr_mult <= 0 or tp_atr_mult > 10:
+        tp_atr_mult = 3.0
+
+    try:
+        risk_percent = float(data.get("risk_percent", 1.0))
+    except (TypeError, ValueError):
+        risk_percent = 1.0
+    if risk_percent <= 0 or risk_percent > 100:
+        risk_percent = 1.0
+
+    new_state = dict(DEFAULT_BOT_STATE)
+    new_state.update({
+        "ticker": ticker,
+        "timeframe": timeframe,
+        "strategy": strategy,
+        "initial_capital": initial_capital,
+        "cash": initial_capital,
+        "sl_atr_mult": sl_atr_mult,
+        "tp_atr_mult": tp_atr_mult,
+        "risk_percent": risk_percent,
+        "created_at": datetime.now(ZoneInfo("America/New_York")).isoformat(),
+        "equity_history": [{"timestamp": int(time.time() * 1000), "equity": initial_capital}]
+    })
+    save_paper_bot_state(new_state)
+    return {"status": "created", "bot": new_state}
+
+
+@app.get("/paper-bot/status")
+def get_paper_bot_status():
+    state = load_paper_bot_state()
+
+    current_equity = state["cash"]
+    unrealized_pnl_percent = None
+    current_price = None
+
+    if state["shares_held"] > 0 and state["ticker"]:
+        try:
+            stock = yf.Ticker(state["ticker"])
+            df = stock.history(period="5d", interval="1d")
+            if not df.empty:
+                current_price = float(df['Close'].iloc[-1])
+                position_value = state["shares_held"] * current_price
+                current_equity = state["cash"] + position_value
+                if state["avg_entry_price"]:
+                    unrealized_pnl_percent = round(
+                        (current_price - state["avg_entry_price"]) / state["avg_entry_price"] * 100, 2
+                    )
+        except Exception as e:
+            print(f"[paper-bot] status check price error: {repr(e)}")
+
+    result = dict(state)
+    result["current_price"] = round(current_price, 2) if current_price is not None else None
+    result["current_equity"] = round(current_equity, 2)
+    result["total_return_percent"] = (
+        round((current_equity - state["initial_capital"]) / state["initial_capital"] * 100, 2)
+        if state["initial_capital"] > 0 else 0
+    )
+    result["unrealized_pnl_percent"] = unrealized_pnl_percent
+    return result
+
+
+@app.post("/paper-bot/start")
+def start_paper_bot():
+    state = load_paper_bot_state()
+    if not state["ticker"]:
+        return {"error": "ยังไม่ได้ตั้งค่าบอท กรุณาสร้างบอทก่อน"}
+    state["is_active"] = True
+    save_paper_bot_state(state)
+    return {"status": "started"}
+
+
+@app.post("/paper-bot/stop")
+def stop_paper_bot():
+    state = load_paper_bot_state()
+    state["is_active"] = False
+    save_paper_bot_state(state)
+    return {"status": "stopped"}
+
+
+@app.post("/paper-bot/reset")
+def reset_paper_bot():
+    if os.path.exists(PAPER_BOT_FILE):
+        os.remove(PAPER_BOT_FILE)
+    return {"status": "reset"}
+
+
+def check_paper_bot_job():
+    """
+    ทำงานเป็นระยะๆบน server เอง (ทุก 15 นาที) ตัดสินใจซื้อ/ขายให้บอทจริง
+    ใช้ตรรกะเดียวกับ /entry-exit (5 เงื่อนไข + ATR stop-loss/take-profit) สำหรับกลยุทธ์ advanced
+    หรือ EMA crossover ล้วนๆสำหรับกลยุทธ์ simple ให้สอดคล้องกับ Backtest ที่มีอยู่แล้ว
+    """
+    state = load_paper_bot_state()
+    if not state.get("is_active") or not state.get("ticker"):
+        return
+
+    ticker = state["ticker"]
+    tf = state.get("timeframe", "1d")
+
+    try:
+        interval = ENTRY_EXIT_INTERVAL_MAP.get(tf, "1d")
+        period = ENTRY_EXIT_PERIOD_MAP.get(tf, "6mo")
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period, interval=interval)
+
+        if df.empty or len(df) < 25:
+            state["last_checked_at"] = datetime.now(ZoneInfo("America/New_York")).isoformat()
+            state["last_check_note"] = "ข้อมูลไม่พอสำหรับวิเคราะห์รอบนี้"
+            save_paper_bot_state(state)
+            return
+
+        close = df['Close'].dropna()
+        # ปัดทศนิยมราคาให้เป็นค่าเดียวตั้งแต่ต้น แล้วใช้ค่านี้ตลอดทั้งฟังก์ชัน (ทั้งคำนวณต้นทุน,
+        # บันทึกราคาเข้า, คำนวณ SL/TP) กันปัญหาบัญชีเพี้ยนจากการปัดเศษไม่สม่ำเสมอ (เงินสดหักด้วย
+        # ราคาที่ยังไม่ปัด แต่ราคาที่บันทึกไว้โชว์เป็นค่าที่ปัดแล้ว ทำให้ตัวเลขไม่ตรงกันเป๊ะๆ)
+        current_price = round(float(close.iloc[-1]), 2)
+        now_iso = datetime.now(ZoneInfo("America/New_York")).isoformat()
+
+        ema10 = close.ewm(span=10, adjust=False).mean()
+        ema20 = close.ewm(span=20, adjust=False).mean()
+        trend_bullish = bool(ema10.iloc[-1] > ema20.iloc[-1])
+
+        if state["shares_held"] == 0:
+            # ยังไม่ถือหุ้น -> เช็คว่าควรเข้าซื้อไหม
+            if state["strategy"] == "advanced":
+                adx, _, _ = calculate_adx(df)
+                atr_series = calculate_atr(df)
+                rsi_series = calculate_rsi(close)
+                _, _, hist = calculate_macd(close)
+
+                trend_strong = pd.notna(adx.iloc[-1]) and adx.iloc[-1] >= 20
+                rsi_ok = pd.notna(rsi_series.iloc[-1]) and rsi_series.iloc[-1] < 70
+                macd_ok = pd.notna(hist.iloc[-1]) and hist.iloc[-1] > 0
+
+                volume_ok = True
+                if 'Volume' in df.columns:
+                    volume = df['Volume'].dropna()
+                    if len(volume) >= 20:
+                        avg_vol = float(volume.iloc[-20:].mean())
+                        if avg_vol > 0:
+                            volume_ok = float(volume.iloc[-1]) > avg_vol
+
+                conditions_met = sum([trend_bullish, trend_strong, rsi_ok, macd_ok, volume_ok])
+                atr_value = float(atr_series.iloc[-1]) if pd.notna(atr_series.iloc[-1]) else None
+                should_enter = conditions_met >= 4 and atr_value and atr_value > 0
+            else:
+                atr_series = calculate_atr(df)
+                atr_value = float(atr_series.iloc[-1]) if pd.notna(atr_series.iloc[-1]) else None
+                should_enter = trend_bullish and atr_value and atr_value > 0
+
+            if should_enter:
+                sl = current_price - state["sl_atr_mult"] * atr_value
+                tp = current_price + state["tp_atr_mult"] * atr_value
+                risk_per_share = current_price - sl
+
+                if risk_per_share > 0:
+                    risk_amount = state["cash"] * (state["risk_percent"] / 100)
+                    shares_to_buy = int(risk_amount / risk_per_share)
+                    max_affordable = int(state["cash"] / current_price) if current_price > 0 else 0
+                    shares_to_buy = min(shares_to_buy, max_affordable)
+
+                    if shares_to_buy > 0:
+                        cost = shares_to_buy * current_price
+                        state["cash"] = round(state["cash"] - cost, 2)
+                        state["shares_held"] = shares_to_buy
+                        state["avg_entry_price"] = round(current_price, 2)
+                        state["entry_date_recorded"] = now_iso
+                        state["current_stop_loss"] = round(sl, 2)
+                        state["current_take_profit"] = round(tp, 2)
+                        state["last_check_note"] = f"เข้าซื้อ {shares_to_buy} หุ้น ที่ ${round(current_price, 2)}"
+                    else:
+                        state["last_check_note"] = "สัญญาณเข้าซื้อผ่าน แต่เงินสดไม่พอซื้อแม้แต่ 1 หุ้น"
+                else:
+                    state["last_check_note"] = "สัญญาณเข้าซื้อผ่าน แต่คำนวณระยะ stop-loss ไม่ได้"
+            else:
+                state["last_check_note"] = "ยังไม่เข้าเงื่อนไขเข้าซื้อรอบนี้"
+
+        else:
+            # ถือหุ้นอยู่ -> เช็คว่าควรขายออกไหม
+            hit_stop = current_price <= state["current_stop_loss"]
+            hit_target = current_price >= state["current_take_profit"]
+            trend_reversed = bool(ema10.iloc[-1] < ema20.iloc[-1])
+            should_exit = hit_stop or hit_target or trend_reversed
+
+            if should_exit:
+                proceeds = state["shares_held"] * current_price
+                cost_basis = state["shares_held"] * state["avg_entry_price"]
+                pnl_amount = round(proceeds - cost_basis, 2)
+                return_pct = round((current_price - state["avg_entry_price"]) / state["avg_entry_price"] * 100, 2)
+                reason = "stop_loss" if hit_stop else ("take_profit" if hit_target else "trend_reversal")
+
+                state["trades"].append({
+                    "entry_date": state.get("entry_date_recorded") or now_iso,
+                    "entry_price": state["avg_entry_price"],
+                    "exit_date": now_iso,
+                    "exit_price": round(current_price, 2),
+                    "shares": state["shares_held"],
+                    "return_percent": return_pct,
+                    "pnl_amount": pnl_amount,
+                    "is_win": pnl_amount > 0,
+                    "exit_reason": reason
+                })
+
+                state["cash"] = round(state["cash"] + proceeds, 2)
+                state["shares_held"] = 0
+                state["avg_entry_price"] = None
+                state["entry_date_recorded"] = None
+                state["current_stop_loss"] = None
+                state["current_take_profit"] = None
+                sign = "+" if return_pct > 0 else ""
+                state["last_check_note"] = f"ขายออก ({reason}) ที่ ${round(current_price, 2)} ({sign}{return_pct}%)"
+            else:
+                state["last_check_note"] = "ยังถือหุ้นอยู่ ยังไม่ถึงจุดออก"
+
+        # อัปเดต equity history ทุกครั้งที่เช็ค (สำหรับกราฟ equity curve)
+        current_equity = state["cash"] + (state["shares_held"] * current_price if state["shares_held"] > 0 else 0)
+        state["equity_history"].append({"timestamp": int(time.time() * 1000), "equity": round(current_equity, 2)})
+        if len(state["equity_history"]) > 500:  # กันไฟล์บวมเกินไป เก็บแค่ 500 จุดล่าสุดพอ
+            state["equity_history"] = state["equity_history"][-500:]
+
+        state["last_checked_at"] = now_iso
+        save_paper_bot_state(state)
+
+    except Exception as e:
+        print(f"[paper-bot] error checking {ticker}: {repr(e)}")
+
+
 # ตัวเช็คอัตโนมัติทำงานทุก 5 นาที บน server เอง ไม่ต้องพึ่งเบราว์เซอร์เปิดค้างไว้เลย
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_server_alerts_job, "interval", minutes=5)
+scheduler.add_job(check_paper_bot_job, "interval", minutes=15)
 scheduler.start()
 
 
