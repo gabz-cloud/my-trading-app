@@ -312,7 +312,17 @@
         .backtest-section { margin-top: 24px; }
         .entry-exit-section { margin-top: 24px; }
 
-        .entry-exit-controls { display: flex; gap: 8px; margin-bottom: 16px; }
+        .entry-exit-controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: flex-end; }
+        .labeled-input-group { display: flex; flex-direction: column; gap: 4px; }
+        .labeled-input-label { font-size: 10px; color: var(--text-muted); font-weight: 700; padding-left: 2px; }
+        .control-section-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            margin: 4px 0 6px;
+        }
         .entry-exit-controls select {
             padding: 9px 10px;
             border-radius: 8px;
@@ -367,7 +377,7 @@
         .ee-disclaimer { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
 
-        .backtest-controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .backtest-controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: flex-end; }
         .backtest-controls select {
             padding: 9px 10px;
             border-radius: 8px;
@@ -1634,6 +1644,7 @@
                     <span id="entryExitToggleIcon" class="news-toggle-icon">▼</span>
                 </div>
                 <div id="entryExitWrap" class="collapsible-wrap collapsed">
+                    <div class="control-section-label">⏱️ ไทม์เฟรม</div>
                     <div class="entry-exit-controls">
                         <select id="entryExitTf" aria-label="ไทม์เฟรมสำหรับวิเคราะห์จุดเข้า">
                             <option value="1m">1 นาที</option>
@@ -1645,13 +1656,29 @@
                         </select>
                         <button class="btn-set-alert" onclick="runEntryExitAnalysis()">วิเคราะห์</button>
                     </div>
+
+                    <div class="control-section-label">💰 คำนวณจำนวนหุ้นที่แนะนำ</div>
                     <div class="entry-exit-controls">
-                        <input type="number" id="entryExitAccountSize" class="toolbar-num" placeholder="เงินทุน ($)" value="10000" min="0" aria-label="ขนาดพอร์ต (สำหรับคำนวณจำนวนหุ้นที่แนะนำ)">
-                        <input type="number" id="entryExitRiskPercent" class="toolbar-num" placeholder="เสี่ยง % ต่อไม้" value="1" min="0.1" max="100" step="0.1" aria-label="เปอร์เซ็นต์ความเสี่ยงต่อไม้">
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="entryExitAccountSize">เงินทุน ($)</label>
+                            <input type="number" id="entryExitAccountSize" class="toolbar-num" value="10000" min="0" aria-label="ขนาดพอร์ต (สำหรับคำนวณจำนวนหุ้นที่แนะนำ)">
+                        </div>
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="entryExitRiskPercent">เสี่ยง % ต่อไม้</label>
+                            <input type="number" id="entryExitRiskPercent" class="toolbar-num" value="1" min="0.1" max="100" step="0.1" aria-label="เปอร์เซ็นต์ความเสี่ยงต่อไม้">
+                        </div>
                     </div>
+
+                    <div class="control-section-label">🎯 จุดตัดขาดทุน / ทำกำไร (คูณจาก ATR)</div>
                     <div class="entry-exit-controls">
-                        <input type="number" id="entryExitSlMult" class="toolbar-num" placeholder="SL (×ATR)" value="2" min="0.1" max="10" step="0.1" aria-label="ตัวคูณ ATR สำหรับจุดตัดขาดทุน">
-                        <input type="number" id="entryExitTpMult" class="toolbar-num" placeholder="TP (×ATR)" value="3" min="0.1" max="10" step="0.1" aria-label="ตัวคูณ ATR สำหรับจุดทำกำไร">
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="entryExitSlMult">SL (×ATR)</label>
+                            <input type="number" id="entryExitSlMult" class="toolbar-num" value="2" min="0.1" max="10" step="0.1" aria-label="ตัวคูณ ATR สำหรับจุดตัดขาดทุน">
+                        </div>
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="entryExitTpMult">TP (×ATR)</label>
+                            <input type="number" id="entryExitTpMult" class="toolbar-num" value="3" min="0.1" max="10" step="0.1" aria-label="ตัวคูณ ATR สำหรับจุดทำกำไร">
+                        </div>
                     </div>
                     <div class="ee-disclaimer" style="margin-bottom:14px;">💡 TP ไกลกว่า SL มาก = Win Rate ต่ำลงตามธรรมชาติ (ราคาต้องวิ่งไกลกว่าถึงจะถึงเป้า) ลองปรับตัวเลขแล้วกด "วิเคราะห์" ใหม่เพื่อเทียบดูได้</div>
                     <div id="entryExitResults" class="entry-exit-results">
@@ -1669,6 +1696,7 @@
                     <span id="backtestToggleIcon" class="news-toggle-icon">▼</span>
                 </div>
                 <div id="backtestWrap" class="collapsible-wrap collapsed">
+                    <div class="control-section-label">⚙️ ตั้งค่าการทดสอบ</div>
                     <div class="backtest-controls">
                         <select id="backtestTf" aria-label="ไทม์เฟรม" onchange="updateBacktestPeriodOptions()">
                             <option value="1m">1 นาที</option>
@@ -1690,11 +1718,19 @@
                         </select>
                         <button class="btn-set-alert" onclick="runBacktest()">รันทดสอบ</button>
                     </div>
+
+                    <div class="control-section-label">🎯 จุดตัดขาดทุน / ทำกำไร (เฉพาะกลยุทธ์ "แบบใหม่")</div>
                     <div class="backtest-controls">
-                        <input type="number" id="backtestSlMult" class="toolbar-num" placeholder="SL (×ATR)" value="2" min="0.1" max="10" step="0.1" aria-label="ตัวคูณ ATR สำหรับจุดตัดขาดทุน (ใช้กับกลยุทธ์แบบใหม่เท่านั้น)">
-                        <input type="number" id="backtestTpMult" class="toolbar-num" placeholder="TP (×ATR)" value="3" min="0.1" max="10" step="0.1" aria-label="ตัวคูณ ATR สำหรับจุดทำกำไร (ใช้กับกลยุทธ์แบบใหม่เท่านั้น)">
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="backtestSlMult">SL (×ATR)</label>
+                            <input type="number" id="backtestSlMult" class="toolbar-num" value="2" min="0.1" max="10" step="0.1" aria-label="ตัวคูณ ATR สำหรับจุดตัดขาดทุน (ใช้กับกลยุทธ์แบบใหม่เท่านั้น)">
+                        </div>
+                        <div class="labeled-input-group">
+                            <label class="labeled-input-label" for="backtestTpMult">TP (×ATR)</label>
+                            <input type="number" id="backtestTpMult" class="toolbar-num" value="3" min="0.1" max="10" step="0.1" aria-label="ตัวคูณ ATR สำหรับจุดทำกำไร (ใช้กับกลยุทธ์แบบใหม่เท่านั้น)">
+                        </div>
                     </div>
-                    <div class="ee-disclaimer" style="margin-bottom:14px;">💡 ไทม์เฟรมสั้น (1m/5m/15m/30m) ทดสอบย้อนหลังได้ไม่กี่วัน-1 เดือน ตามข้อจำกัดของแหล่งข้อมูล ยิ่งแท่งสั้นยิ่งย้อนหลังได้น้อย | ช่อง SL/TP ใช้ได้เฉพาะกลยุทธ์ "แบบใหม่" — ยิ่ง TP ไกลจาก SL มาก Win Rate ยิ่งต่ำลงตามธรรมชาติ ลองปรับดูเทียบกันได้</div>
+                    <div class="ee-disclaimer" style="margin-bottom:14px;">💡 ไทม์เฟรมสั้น (1m/5m/15m/30m) ทดสอบย้อนหลังได้ไม่กี่วัน-1 เดือน ตามข้อจำกัดของแหล่งข้อมูล | ยิ่ง TP ไกลจาก SL มาก Win Rate ยิ่งต่ำลงตามธรรมชาติ ลองปรับดูเทียบกันได้</div>
                     <div id="backtestResults" class="backtest-results">
                         <div class="news-empty">เลือกไทม์เฟรม/ช่วงเวลา/กลยุทธ์แล้วกด "รันทดสอบ" เพื่อดูว่าสัญญาณ BUY/HOLD ของแอปนี้แม่นแค่ไหนในอดีตครับ</div>
                     </div>
