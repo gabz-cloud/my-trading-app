@@ -1012,11 +1012,22 @@ def analyze_entry_exit(ticker: str, tf: str = "1d", account_size: float = 10000.
 # "advanced" = ตรรกะเดียวกับหน้า "จุดเข้า-ออก" (5 เงื่อนไขยืนยัน + stop-loss/take-profit จาก ATR)
 # แยกไว้ให้เทียบกันตรงๆได้ว่าตรรกะใหม่ดีขึ้นจริงหรือเปล่า เทียบกับของเดิม
 BACKTEST_CACHE_TTL = 3600  # 1 ชั่วโมง (ข้อมูลย้อนหลังไม่เปลี่ยนบ่อยในระยะสั้น)
-VALID_BACKTEST_PERIODS = {"3mo", "6mo", "1y", "2y"}
 VALID_BACKTEST_STRATEGIES = {"simple", "advanced"}
 
+# yfinance จำกัดข้อมูลย้อนหลังของแท่งเทียนสั้นๆไว้ไม่เท่ากัน (ตามข้อจำกัดจริงของ Yahoo Finance)
+# ยิ่งแท่งสั้น ยิ่งย้อนหลังได้น้อย - ต้องจำกัดตัวเลือก "period" ให้ตรงกับที่แต่ละ interval รองรับจริง
+# ไม่งั้นเลือกช่วงยาวเกินไปกับแท่งสั้นๆแล้วจะได้ error/ข้อมูลไม่ครบจาก yfinance
+BACKTEST_TF_CONFIG = {
+    "1m":  {"interval": "1m",  "periods": ["1d", "5d"], "date_fmt": "%m-%d %H:%M"},
+    "5m":  {"interval": "5m",  "periods": ["5d", "1mo"], "date_fmt": "%m-%d %H:%M"},
+    "15m": {"interval": "15m", "periods": ["5d", "1mo"], "date_fmt": "%m-%d %H:%M"},
+    "30m": {"interval": "30m", "periods": ["5d", "1mo"], "date_fmt": "%m-%d %H:%M"},
+    "1h":  {"interval": "1h",  "periods": ["1mo", "3mo", "6mo", "1y", "2y"], "date_fmt": "%m-%d %H:%M"},
+    "1d":  {"interval": "1d",  "periods": ["3mo", "6mo", "1y", "2y"], "date_fmt": "%Y-%m-%d"},
+}
 
-def _simulate_simple_strategy(df):
+
+def _simulate_simple_strategy(df, date_fmt='%Y-%m-%d'):
     """ตรรกะเดิม: เข้าตอน EMA10 ตัดขึ้น EMA20, ออกตอนตัดกลับลง"""
     close = df['Close'].dropna()
     ema10 = close.ewm(span=10, adjust=False).mean()
@@ -1032,7 +1043,7 @@ def _simulate_simple_strategy(df):
     for i in range(len(close)):
         sig_buy = bool(is_buy_signal.iloc[i])
         price = float(close.iloc[i])
-        date_str = dates[i].strftime('%Y-%m-%d')
+        date_str = dates[i].strftime(date_fmt)
 
         if not holding and sig_buy:
             holding = True
@@ -1063,7 +1074,7 @@ def _simulate_simple_strategy(df):
     return trades, open_position
 
 
-def _simulate_advanced_strategy(df):
+def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d'):
     """
     ตรรกะเดียวกับหน้า 'จุดเข้า-ออก': เข้าเมื่อผ่านอย่างน้อย 4 ใน 5 เงื่อนไข
     (เทรนด์ + ADX≥20 + RSI<70 + MACD บวก + Volume>เฉลี่ย20แท่ง) และมี ATR คำนวณได้
@@ -1095,7 +1106,7 @@ def _simulate_advanced_strategy(df):
             continue
 
         price = float(close.iloc[i])
-        date_str = dates[i].strftime('%Y-%m-%d')
+        date_str = dates[i].strftime(date_fmt)
 
         if not holding:
             trend_bullish = bool(ema10.iloc[i] > ema20.iloc[i])
@@ -1152,31 +1163,40 @@ def _simulate_advanced_strategy(df):
 
 
 @app.get("/backtest/{ticker}")
-def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple"):
+def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple", tf: str = "1d"):
     ticker_upper = ticker.upper()
-    if period not in VALID_BACKTEST_PERIODS:
-        period = "1y"
+    if tf not in BACKTEST_TF_CONFIG:
+        tf = "1d"
     if strategy not in VALID_BACKTEST_STRATEGIES:
         strategy = "simple"
 
-    cache_key = f"backtest:{ticker_upper}:{period}:{strategy}"
+    tf_config = BACKTEST_TF_CONFIG[tf]
+    if period not in tf_config["periods"]:
+        # ถ้าเลือก period ที่ไม่รองรับกับ timeframe นี้ (เช่น เดิมเคยเลือก 1y ไว้ตอนอยู่ 1d
+        # แล้วสลับมา 5m) ใช้ค่ายาวที่สุดที่ timeframe นี้รองรับจริงแทน ไม่ error ใส่ผู้ใช้ตรงๆ
+        period = tf_config["periods"][-1]
+
+    interval = tf_config["interval"]
+    date_fmt = tf_config["date_fmt"]
+
+    cache_key = f"backtest:{ticker_upper}:{period}:{strategy}:{tf}"
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
 
     try:
         stock = yf.Ticker(ticker_upper)
-        df = stock.history(period=period, interval="1d")
+        df = stock.history(period=period, interval=interval)
 
         if df.empty or len(df) < 25:
-            return {"error": "ข้อมูลไม่พอสำหรับทดสอบย้อนหลัง (ต้องการอย่างน้อย ~25 วันทำการ)"}
+            return {"error": f"ข้อมูลไม่พอสำหรับทดสอบย้อนหลังที่ไทม์เฟรม {tf} ช่วง {period} (ต้องการอย่างน้อย ~25 แท่ง) ลองเลือกช่วงเวลาสั้นลง หรือไทม์เฟรมที่ยาวขึ้นครับ"}
 
         close = df['Close'].dropna()
 
         if strategy == "advanced":
-            trades, open_position = _simulate_advanced_strategy(df)
+            trades, open_position = _simulate_advanced_strategy(df, date_fmt=date_fmt)
         else:
-            trades, open_position = _simulate_simple_strategy(df)
+            trades, open_position = _simulate_simple_strategy(df, date_fmt=date_fmt)
 
         total_trades = len(trades)
         win_count = sum(1 for t in trades if t["is_win"])
@@ -1198,11 +1218,12 @@ def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple"):
         # ส่งราคาย้อนหลังทั้งช่วงที่ทดสอบกลับไปด้วย เพื่อให้ frontend วาดกราฟจุดเข้า-ออกได้ตรงวันที่แน่นอน
         # (กราฟราคาปกติโชว์แค่ 3 เดือนล่าสุด แต่ backtest อาจทดสอบยาวถึง 1-2 ปี ถ้าใช้กราฟเดิมวันที่จะไม่ตรงกัน)
         chart_data = [round(x, 2) for x in close.tolist()]
-        chart_dates = [d.strftime('%Y-%m-%d') for d in close.index]
+        chart_dates = [d.strftime(date_fmt) for d in close.index]
 
         result = {
             "ticker": ticker_upper,
             "period": period,
+            "timeframe": tf,
             "strategy": strategy,
             "data_points": len(close),
             "total_trades": total_trades,

@@ -364,7 +364,7 @@
         .ee-disclaimer { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
 
-        .backtest-controls { display: flex; gap: 8px; margin-bottom: 16px; }
+        .backtest-controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
         .backtest-controls select {
             padding: 9px 10px;
             border-radius: 8px;
@@ -1662,16 +1662,29 @@
                 </div>
                 <div id="backtestWrap" class="collapsible-wrap collapsed">
                     <div class="backtest-controls">
+                        <select id="backtestTf" aria-label="ไทม์เฟรม" onchange="updateBacktestPeriodOptions()">
+                            <option value="1m">1 นาที</option>
+                            <option value="5m">5 นาที</option>
+                            <option value="15m">15 นาที</option>
+                            <option value="30m">30 นาที</option>
+                            <option value="1h">1 ชั่วโมง</option>
+                            <option value="1d" selected>1 วัน</option>
+                        </select>
                         <select id="backtestPeriod" aria-label="ช่วงเวลาย้อนหลัง">
                             <option value="3mo">3 เดือน</option>
                             <option value="6mo">6 เดือน</option>
                             <option value="1y" selected>1 ปี</option>
                             <option value="2y">2 ปี</option>
                         </select>
+                        <select id="backtestStrategy" aria-label="กลยุทธ์ที่ใช้ทดสอบ">
+                            <option value="simple">แบบเดิม (EMA อย่างเดียว)</option>
+                            <option value="advanced" selected>แบบใหม่ (5 เงื่อนไข + ATR)</option>
+                        </select>
                         <button class="btn-set-alert" onclick="runBacktest()">รันทดสอบ</button>
                     </div>
+                    <div class="ee-disclaimer" style="margin-bottom:14px;">💡 ไทม์เฟรมสั้น (1m/5m/15m/30m) ทดสอบย้อนหลังได้ไม่กี่วัน-1 เดือน ตามข้อจำกัดของแหล่งข้อมูล ยิ่งแท่งสั้นยิ่งย้อนหลังได้น้อย</div>
                     <div id="backtestResults" class="backtest-results">
-                        <div class="news-empty">เลือกช่วงเวลาแล้วกด "รันทดสอบ" เพื่อดูว่าสัญญาณ BUY/HOLD ของแอปนี้แม่นแค่ไหนในอดีตครับ</div>
+                        <div class="news-empty">เลือกไทม์เฟรม/ช่วงเวลา/กลยุทธ์แล้วกด "รันทดสอบ" เพื่อดูว่าสัญญาณ BUY/HOLD ของแอปนี้แม่นแค่ไหนในอดีตครับ</div>
                     </div>
                 </div>
             </div>
@@ -2635,17 +2648,41 @@
         }
 
         // รัน backtest ของหุ้นที่กำลังเปิดดูอยู่ ตามช่วงเวลาที่เลือก
+        // ตัวเลือกช่วงเวลาที่รองรับจริงของแต่ละไทม์เฟรม (ต้องตรงกับ BACKTEST_TF_CONFIG ฝั่ง backend เป๊ะๆ)
+        // ยิ่งแท่งสั้น yfinance ยิ่งให้ข้อมูลย้อนหลังได้น้อย เลยต้องจำกัดตัวเลือกให้ตรงกับที่ดึงได้จริง
+        const BACKTEST_TF_PERIOD_OPTIONS = {
+            '1m':  [{ v: '1d', l: '1 วัน' }, { v: '5d', l: '5 วัน' }],
+            '5m':  [{ v: '5d', l: '5 วัน' }, { v: '1mo', l: '1 เดือน' }],
+            '15m': [{ v: '5d', l: '5 วัน' }, { v: '1mo', l: '1 เดือน' }],
+            '30m': [{ v: '5d', l: '5 วัน' }, { v: '1mo', l: '1 เดือน' }],
+            '1h':  [{ v: '1mo', l: '1 เดือน' }, { v: '3mo', l: '3 เดือน' }, { v: '6mo', l: '6 เดือน' }, { v: '1y', l: '1 ปี' }, { v: '2y', l: '2 ปี' }],
+            '1d':  [{ v: '3mo', l: '3 เดือน' }, { v: '6mo', l: '6 เดือน' }, { v: '1y', l: '1 ปี' }, { v: '2y', l: '2 ปี' }]
+        };
+
+        // สลับไทม์เฟรมแล้วต้องเปลี่ยนตัวเลือกช่วงเวลาให้ตรงกับที่รองรับจริงด้วย กันเลือกช่วงยาวเกินไปกับแท่งสั้นๆ
+        function updateBacktestPeriodOptions() {
+            const tf = document.getElementById('backtestTf').value;
+            const periodSelect = document.getElementById('backtestPeriod');
+            const options = BACKTEST_TF_PERIOD_OPTIONS[tf] || BACKTEST_TF_PERIOD_OPTIONS['1d'];
+            const defaultIdx = Math.min(2, options.length - 1); // เลือกตัวกลางๆค่อนไปทางยาวเป็นค่าเริ่มต้น
+            periodSelect.innerHTML = options.map((o, i) =>
+                `<option value="${o.v}" ${i === defaultIdx ? 'selected' : ''}>${o.l}</option>`
+            ).join('');
+        }
+
         async function runBacktest() {
             if (!currentTicker) {
                 showToast('กรุณาเปิดหน้าหุ้นก่อนครับ', 'alert');
                 return;
             }
+            const tf = document.getElementById('backtestTf').value;
             const period = document.getElementById('backtestPeriod').value;
+            const strategy = document.getElementById('backtestStrategy').value;
             const container = document.getElementById('backtestResults');
             container.innerHTML = `<div class="news-empty">กำลังทดสอบย้อนหลัง...</div>`;
 
             try {
-                const response = await fetch(`${API_BASE}/backtest/${currentTicker}?period=${period}`);
+                const response = await fetch(`${API_BASE}/backtest/${currentTicker}?period=${period}&strategy=${strategy}&tf=${tf}`);
                 const data = await response.json();
                 if (data.error) {
                     container.innerHTML = `<div class="news-empty">${data.error}</div>`;
@@ -4145,7 +4182,7 @@
                 }
             });
 
-            showToast(`แสดงจุดเข้า-ออกทั้ง ${data.trades.length} ครั้ง บนกราฟช่วง ${data.period} แล้วครับ (กดรีเฟรช/เปลี่ยนไทม์เฟรมเพื่อกลับไปดูกราฟราคาปกติ)`, 'info');
+            showToast(`แสดงจุดเข้า-ออกทั้ง ${data.trades.length} ครั้ง บนกราฟไทม์เฟรม ${data.timeframe || '1d'} ช่วง ${data.period} แล้วครับ (กดรีเฟรช/เปลี่ยนไทม์เฟรมเพื่อกลับไปดูกราฟราคาปกติ)`, 'info');
         }
     </script>
 </body>
