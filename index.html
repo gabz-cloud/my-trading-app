@@ -7,6 +7,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.js"></script>
     <style>
         :root[data-theme="dark"] {
             --bg-color: #0A0E17;
@@ -4070,36 +4073,81 @@
             const ctx = document.getElementById('cryptoChart').getContext('2d');
             if (currentChart) { currentChart.destroy(); }
 
-            const lastSupport = stockData.supports[stockData.supports.length - 1];
-            const lastResistance = stockData.resistances[stockData.resistances.length - 1];
-
-            const supportLine = Array(stockData.chart_data.length).fill(lastSupport);
-            const resistanceLine = Array(stockData.chart_data.length).fill(lastResistance);
-
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
             const gridColor = isDark ? '#232B45' : '#E9EBF3';
             const tickColor = isDark ? '#EDEFF6' : '#12162A';
 
-            currentChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: stockData.chart_dates,
-                    datasets: [
-                        { label: 'ราคาปิด', data: stockData.chart_data, borderColor: '#4FD1C5', borderWidth: 2, pointRadius: 0, fill: false },
-                        { label: 'แนวต้าน', data: resistanceLine, borderColor: '#FF5C6C', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false },
-                        { label: 'แนวรับ', data: supportLine, borderColor: '#3ADC8F', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: { grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 7 } },
-                        y: { grid: { color: gridColor }, ticks: { color: tickColor } }
+            const lastSupport = stockData.supports[stockData.supports.length - 1];
+            const lastResistance = stockData.resistances[stockData.resistances.length - 1];
+
+            // ถ้ามีข้อมูล OHLC + timestamp ครบ (ปกติควรมีเสมอ) วาดเป็นแท่งเทียนจริง
+            // ถ้าไม่มี (เช่น cache เก่าค้างจากก่อนอัปเดต) fallback กลับไปกราฟเส้นแบบเดิม กันหน้าเว็บพังไปเลย
+            const hasOhlc = stockData.chart_timestamps && stockData.chart_open && stockData.chart_high && stockData.chart_low;
+
+            if (hasOhlc) {
+                const timestamps = stockData.chart_timestamps;
+                const candleData = timestamps.map((t, i) => ({
+                    x: t,
+                    o: stockData.chart_open[i],
+                    h: stockData.chart_high[i],
+                    l: stockData.chart_low[i],
+                    c: stockData.chart_data[i]
+                }));
+
+                const firstTs = timestamps[0];
+                const lastTs = timestamps[timestamps.length - 1];
+                const supportLine = [{ x: firstTs, y: lastSupport }, { x: lastTs, y: lastSupport }];
+                const resistanceLine = [{ x: firstTs, y: lastResistance }, { x: lastTs, y: lastResistance }];
+
+                currentChart = new Chart(ctx, {
+                    type: 'candlestick',
+                    data: {
+                        datasets: [
+                            {
+                                label: 'ราคา',
+                                data: candleData,
+                                color: { up: '#3ADC8F', down: '#FF5C6C', unchanged: '#8891AC' },
+                                borderColor: { up: '#3ADC8F', down: '#FF5C6C', unchanged: '#8891AC' }
+                            },
+                            { type: 'line', label: 'แนวต้าน', data: resistanceLine, borderColor: '#FF5C6C', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false },
+                            { type: 'line', label: 'แนวรับ', data: supportLine, borderColor: '#3ADC8F', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false }
+                        ]
                     },
-                    plugins: { legend: { display: true, labels: { color: tickColor } } }
-                }
-            });
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { type: 'time', grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 7 } },
+                            y: { grid: { color: gridColor }, ticks: { color: tickColor } }
+                        },
+                        plugins: { legend: { display: true, labels: { color: tickColor } } }
+                    }
+                });
+            } else {
+                const supportLine = Array(stockData.chart_data.length).fill(lastSupport);
+                const resistanceLine = Array(stockData.chart_data.length).fill(lastResistance);
+
+                currentChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: stockData.chart_dates,
+                        datasets: [
+                            { label: 'ราคาปิด', data: stockData.chart_data, borderColor: '#4FD1C5', borderWidth: 2, pointRadius: 0, fill: false },
+                            { label: 'แนวต้าน', data: resistanceLine, borderColor: '#FF5C6C', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false },
+                            { label: 'แนวรับ', data: supportLine, borderColor: '#3ADC8F', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 7 } },
+                            y: { grid: { color: gridColor }, ticks: { color: tickColor } }
+                        },
+                        plugins: { legend: { display: true, labels: { color: tickColor } } }
+                    }
+                });
+            }
         }
 
         // ========= วาดจุดเข้า-ออกจาก Backtest บนกราฟราคา =========
@@ -4118,30 +4166,33 @@
                 showToast('ไม่มีข้อมูลเทรดให้แสดงครับ', 'alert');
                 return;
             }
-            if (!data.chart_data || !data.chart_dates) {
+            if (!data.chart_timestamps || !data.chart_open || !data.chart_high || !data.chart_low) {
                 showToast('ข้อมูลราคาย้อนหลังไม่ครบ ลองรัน Backtest ใหม่อีกครั้งครับ', 'alert');
                 return;
             }
 
-            const labels = data.chart_dates;
-            const entryPoints = Array(labels.length).fill(null);
-            const exitPoints = Array(labels.length).fill(null);
-            const exitColors = Array(labels.length).fill('#3ADC8F');
-            const tradeInfoByKey = {};
+            const timestamps = data.chart_timestamps;
+            const candleData = timestamps.map((t, i) => ({
+                x: t, o: data.chart_open[i], h: data.chart_high[i], l: data.chart_low[i], c: data.chart_data[i]
+            }));
+
+            // จับคู่ด้วย timestamp ตัวเลขตรงๆ (แม่นยำกว่าเทียบ string วันที่แบบเดิม ไม่มีปัญหาช่วงเวลาไม่ตรงกันอีก)
+            const entryPoints = [];
+            const exitPoints = [];
+            const exitColors = [];
+            const tradeInfoByTimestamp = {};
 
             data.trades.forEach(t => {
-                const entryIdx = labels.indexOf(t.entry_date);
-                const exitIdx = labels.indexOf(t.exit_date);
-                if (entryIdx !== -1) {
-                    entryPoints[entryIdx] = t.entry_price;
-                    tradeInfoByKey[`entry-${entryIdx}`] = `🟢 เข้าซื้อ @ $${t.entry_price}`;
+                if (t.entry_timestamp) {
+                    entryPoints.push({ x: t.entry_timestamp, y: t.entry_price });
+                    tradeInfoByTimestamp[`entry-${t.entry_timestamp}`] = `🟢 เข้าซื้อ @ $${t.entry_price}`;
                 }
-                if (exitIdx !== -1) {
-                    exitPoints[exitIdx] = t.exit_price;
-                    exitColors[exitIdx] = t.is_win ? '#3ADC8F' : '#FF5C6C';
+                if (t.exit_timestamp) {
+                    exitPoints.push({ x: t.exit_timestamp, y: t.exit_price });
+                    exitColors.push(t.is_win ? '#3ADC8F' : '#FF5C6C');
                     const reasonText = BACKTEST_EXIT_REASON_TH[t.exit_reason] || t.exit_reason || '';
                     const sign = t.return_percent > 0 ? '+' : '';
-                    tradeInfoByKey[`exit-${exitIdx}`] = `${t.is_win ? '✅' : '❌'} ออก @ $${t.exit_price} (${sign}${t.return_percent}% • ${reasonText})`;
+                    tradeInfoByTimestamp[`exit-${t.exit_timestamp}`] = `${t.is_win ? '✅' : '❌'} ออก @ $${t.exit_price} (${sign}${t.return_percent}% • ${reasonText})`;
                 }
             });
 
@@ -4153,20 +4204,22 @@
             const tickColor = isDark ? '#EDEFF6' : '#12162A';
 
             currentChart = new Chart(ctx, {
-                type: 'line',
+                type: 'candlestick',
                 data: {
-                    labels: labels,
                     datasets: [
-                        { label: 'ราคาปิด (ช่วง Backtest)', data: data.chart_data, borderColor: '#4FD1C5', borderWidth: 2, pointRadius: 0, fill: false },
                         {
-                            label: 'เข้าซื้อ', data: entryPoints, borderColor: 'transparent', backgroundColor: '#3ADC8F',
-                            pointStyle: 'triangle', pointRadius: entryPoints.map(v => v !== null ? 7 : 0),
-                            pointHoverRadius: 9, showLine: false, isBacktestOverlay: true
+                            label: 'ราคา (ช่วง Backtest)',
+                            data: candleData,
+                            color: { up: '#3ADC8F', down: '#FF5C6C', unchanged: '#8891AC' },
+                            borderColor: { up: '#3ADC8F', down: '#FF5C6C', unchanged: '#8891AC' }
                         },
                         {
-                            label: 'ออก', data: exitPoints, borderColor: 'transparent', backgroundColor: exitColors,
-                            pointStyle: 'rectRot', pointRadius: exitPoints.map(v => v !== null ? 6 : 0),
-                            pointHoverRadius: 8, showLine: false, isBacktestOverlay: true
+                            type: 'line', label: 'เข้าซื้อ', data: entryPoints, borderColor: 'transparent', backgroundColor: '#3ADC8F',
+                            pointStyle: 'triangle', pointRadius: 7, pointHoverRadius: 9, showLine: false, isBacktestOverlay: true
+                        },
+                        {
+                            type: 'line', label: 'ออก', data: exitPoints, borderColor: 'transparent', backgroundColor: exitColors,
+                            pointStyle: 'rectRot', pointRadius: 6, pointHoverRadius: 8, showLine: false, isBacktestOverlay: true
                         }
                     ]
                 },
@@ -4174,7 +4227,7 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        x: { grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 7 } },
+                        x: { type: 'time', grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 7 } },
                         y: { grid: { color: gridColor }, ticks: { color: tickColor } }
                     },
                     plugins: {
@@ -4182,11 +4235,11 @@
                         tooltip: {
                             callbacks: {
                                 label: function (context) {
-                                    const idx = context.dataIndex;
+                                    const x = context.parsed.x;
                                     let key = null;
-                                    if (context.dataset.label === 'เข้าซื้อ') key = `entry-${idx}`;
-                                    else if (context.dataset.label === 'ออก') key = `exit-${idx}`;
-                                    if (key && tradeInfoByKey[key]) return tradeInfoByKey[key];
+                                    if (context.dataset.label === 'เข้าซื้อ') key = `entry-${x}`;
+                                    else if (context.dataset.label === 'ออก') key = `exit-${x}`;
+                                    if (key && tradeInfoByTimestamp[key]) return tradeInfoByTimestamp[key];
                                     return `${context.dataset.label}: $${context.formattedValue}`;
                                 }
                             }

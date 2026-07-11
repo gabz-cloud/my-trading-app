@@ -743,6 +743,13 @@ def get_stock_data(ticker: str, tf: str = "1d"):
         else:
             chart_dates = [date.strftime('%Y-%m-%d') for date in df.index]
 
+        # ===== ข้อมูล OHLC (เปิด/สูง/ต่ำ/ปิด) + timestamp มิลลิวินาที สำหรับวาดกราฟแบบแท่งเทียน =====
+        # chart_data (ราคาปิดอย่างเดียว) ยังเก็บไว้เผื่อใช้งานแบบเส้นในที่อื่นๆของแอปต่อไป
+        chart_open = [round(x, 2) for x in df['Open'].tolist()]
+        chart_high = [round(x, 2) for x in df['High'].tolist()]
+        chart_low = [round(x, 2) for x in df['Low'].tolist()]
+        chart_timestamps = [int(d.timestamp() * 1000) for d in df.index]
+
         result = {
             "ticker": ticker_upper,
             "current_price": analysis["current_price"],
@@ -765,6 +772,10 @@ def get_stock_data(ticker: str, tf: str = "1d"):
             "extended_hours_quote_age_seconds": extended_hours_quote_age_seconds,
             "chart_data": chart_data,
             "chart_dates": chart_dates,
+            "chart_open": chart_open,
+            "chart_high": chart_high,
+            "chart_low": chart_low,
+            "chart_timestamps": chart_timestamps,
             "rsi": analysis["rsi"],
             "macd": analysis["macd"],
             "macd_signal": analysis["macd_signal"],
@@ -1046,28 +1057,32 @@ def _simulate_simple_strategy(df, date_fmt='%Y-%m-%d'):
     holding = False
     entry_price = None
     entry_date = None
+    entry_timestamp = None
 
     for i in range(len(close)):
         sig_buy = bool(is_buy_signal.iloc[i])
         price = float(close.iloc[i])
         date_str = dates[i].strftime(date_fmt)
+        ts = int(dates[i].timestamp() * 1000)
 
         if not holding and sig_buy:
             holding = True
             entry_price = price
             entry_date = date_str
+            entry_timestamp = ts
         elif holding and not sig_buy:
             exit_price = price
             return_pct = round((exit_price - entry_price) / entry_price * 100, 2)
             trades.append({
-                "entry_date": entry_date, "entry_price": round(entry_price, 2),
-                "exit_date": date_str, "exit_price": round(exit_price, 2),
+                "entry_date": entry_date, "entry_price": round(entry_price, 2), "entry_timestamp": entry_timestamp,
+                "exit_date": date_str, "exit_price": round(exit_price, 2), "exit_timestamp": ts,
                 "return_percent": return_pct, "is_win": return_pct > 0,
                 "exit_reason": "signal_reversal"
             })
             holding = False
             entry_price = None
             entry_date = None
+            entry_timestamp = None
 
     open_position = None
     if holding:
@@ -1105,6 +1120,7 @@ def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d', sl_atr_mult=2.0, tp_atr
     holding = False
     entry_price = None
     entry_date = None
+    entry_timestamp = None
     stop_loss = None
     take_profit = None
 
@@ -1114,6 +1130,7 @@ def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d', sl_atr_mult=2.0, tp_atr
 
         price = float(close.iloc[i])
         date_str = dates[i].strftime(date_fmt)
+        ts = int(dates[i].timestamp() * 1000)
 
         if not holding:
             trend_bullish = bool(ema10.iloc[i] > ema20.iloc[i])
@@ -1132,6 +1149,7 @@ def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d', sl_atr_mult=2.0, tp_atr
                 holding = True
                 entry_price = price
                 entry_date = date_str
+                entry_timestamp = ts
                 stop_loss = entry_price - sl_atr_mult * atr_value
                 take_profit = entry_price + tp_atr_mult * atr_value
 
@@ -1145,14 +1163,15 @@ def _simulate_advanced_strategy(df, date_fmt='%Y-%m-%d', sl_atr_mult=2.0, tp_atr
                 return_pct = round((exit_price - entry_price) / entry_price * 100, 2)
                 reason = "stop_loss" if hit_stop else ("take_profit" if hit_target else "trend_reversal")
                 trades.append({
-                    "entry_date": entry_date, "entry_price": round(entry_price, 2),
-                    "exit_date": date_str, "exit_price": round(exit_price, 2),
+                    "entry_date": entry_date, "entry_price": round(entry_price, 2), "entry_timestamp": entry_timestamp,
+                    "exit_date": date_str, "exit_price": round(exit_price, 2), "exit_timestamp": ts,
                     "return_percent": return_pct, "is_win": return_pct > 0,
                     "exit_reason": reason
                 })
                 holding = False
                 entry_price = None
                 entry_date = None
+                entry_timestamp = None
                 stop_loss = None
                 take_profit = None
 
@@ -1231,6 +1250,11 @@ def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple", tf: 
         # (กราฟราคาปกติโชว์แค่ 3 เดือนล่าสุด แต่ backtest อาจทดสอบยาวถึง 1-2 ปี ถ้าใช้กราฟเดิมวันที่จะไม่ตรงกัน)
         chart_data = [round(x, 2) for x in close.tolist()]
         chart_dates = [d.strftime(date_fmt) for d in close.index]
+        # ใช้ .loc[close.index, ...] กันกรณี close.dropna() ตัดบางแถวออกไป ให้ OHLC ตรงแถวเดียวกันเป๊ะ
+        chart_open = [round(x, 2) for x in df.loc[close.index, 'Open'].tolist()]
+        chart_high = [round(x, 2) for x in df.loc[close.index, 'High'].tolist()]
+        chart_low = [round(x, 2) for x in df.loc[close.index, 'Low'].tolist()]
+        chart_timestamps = [int(d.timestamp() * 1000) for d in close.index]
 
         result = {
             "ticker": ticker_upper,
@@ -1250,7 +1274,11 @@ def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple", tf: 
             "open_position": open_position,
             "trades": trades,
             "chart_data": chart_data,
-            "chart_dates": chart_dates
+            "chart_dates": chart_dates,
+            "chart_open": chart_open,
+            "chart_high": chart_high,
+            "chart_low": chart_low,
+            "chart_timestamps": chart_timestamps
         }
 
         cache_set(cache_key, result, BACKTEST_CACHE_TTL)
