@@ -408,7 +408,25 @@
             margin-bottom: 14px;
             line-height: 1.5;
         }
-        .backtest-trades-title { font-size: 12.5px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
+        .backtest-trades-title { font-size: 12.5px; font-weight: 700; color: var(--text-muted); }
+        .backtest-trades-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .btn-show-on-chart {
+            padding: 6px 12px;
+            border-radius: 8px;
+            background: rgba(58, 214, 143, 0.12);
+            border: 1px solid rgba(58, 214, 143, 0.3);
+            color: var(--up-color);
+            font-size: 11.5px;
+            font-weight: 700;
+        }
+        .btn-show-on-chart:hover { background: rgba(58, 214, 143, 0.2); }
         .backtest-trades-list {
             max-height: 220px;
             overflow-y: auto;
@@ -1821,6 +1839,7 @@
         const API_BASE = "";
 
         let currentChart = null;
+        let lastBacktestTrades = [];
         let currentTicker = "";
         let currentTimeframe = "1d";
         let currentTab = "buy";
@@ -2688,7 +2707,11 @@
             }
 
             if (data.trades && data.trades.length > 0) {
-                html += `<div class="backtest-trades-title">ประวัติการเทรดล่าสุด (${data.trades.length} ครั้ง)</div>`;
+                lastBacktestTrades = data.trades;
+                html += `<div class="backtest-trades-title-row">
+                    <span class="backtest-trades-title">ประวัติการเทรดล่าสุด (${data.trades.length} ครั้ง)</span>
+                    <button class="btn-show-on-chart" onclick="overlayBacktestTradesOnChart(lastBacktestTrades)">📍 แสดงบนกราฟ</button>
+                </div>`;
                 html += `<div class="backtest-trades-list">`;
                 const recentTrades = [...data.trades].reverse().slice(0, 20);
                 recentTrades.forEach(t => {
@@ -4027,6 +4050,102 @@
                     plugins: { legend: { display: true, labels: { color: tickColor } } }
                 }
             });
+        }
+
+        // ========= วาดจุดเข้า-ออกจาก Backtest ทับลงบนกราฟราคาโดยตรง =========
+        // ใช้ได้เฉพาะไทม์เฟรม 1 วัน (1d) เท่านั้น เพราะ Backtest คำนวณจากข้อมูลรายวันเสมอ
+        // (รูปแบบวันที่ของกราฟ intraday ไม่ตรงกับที่ backtest ใช้ เลยจับคู่ตำแหน่งกันไม่ได้)
+        const BACKTEST_EXIT_REASON_TH = {
+            stop_loss: 'โดน Stop Loss',
+            take_profit: 'ถึง Take Profit',
+            trend_reversal: 'เทรนด์กลับตัว',
+            signal_reversal: 'สัญญาณเปลี่ยนกลับ'
+        };
+
+        function overlayBacktestTradesOnChart(trades) {
+            if (!currentChart) {
+                showToast('ยังไม่มีกราฟราคาให้แสดงผลครับ', 'alert');
+                return;
+            }
+            if (currentTimeframe !== '1d') {
+                showToast('แสดงจุดเข้า-ออกบนกราฟได้เฉพาะไทม์เฟรม "1 วัน" เท่านั้น ลองกดปุ่ม 1d ที่กราฟก่อนครับ', 'alert');
+                return;
+            }
+            if (!trades || trades.length === 0) {
+                showToast('ไม่มีข้อมูลเทรดให้แสดงครับ', 'alert');
+                return;
+            }
+
+            const labels = currentChart.data.labels;
+            const entryPoints = Array(labels.length).fill(null);
+            const exitPoints = Array(labels.length).fill(null);
+            const exitColors = Array(labels.length).fill('#3ADC8F');
+            const tradeInfoByKey = {};
+            let matchedCount = 0;
+
+            trades.forEach(t => {
+                const entryIdx = labels.indexOf(t.entry_date);
+                const exitIdx = labels.indexOf(t.exit_date);
+                if (entryIdx !== -1) {
+                    entryPoints[entryIdx] = t.entry_price;
+                    tradeInfoByKey[`entry-${entryIdx}`] = `🟢 เข้าซื้อ @ $${t.entry_price}`;
+                    matchedCount++;
+                }
+                if (exitIdx !== -1) {
+                    exitPoints[exitIdx] = t.exit_price;
+                    exitColors[exitIdx] = t.is_win ? '#3ADC8F' : '#FF5C6C';
+                    const reasonText = BACKTEST_EXIT_REASON_TH[t.exit_reason] || t.exit_reason || '';
+                    const sign = t.return_percent > 0 ? '+' : '';
+                    tradeInfoByKey[`exit-${exitIdx}`] = `${t.is_win ? '✅' : '❌'} ออก @ $${t.exit_price} (${sign}${t.return_percent}% • ${reasonText})`;
+                }
+            });
+
+            if (matchedCount === 0) {
+                showToast('ช่วงเวลาที่กราฟแสดงอยู่ไม่ตรงกับช่วงที่ทดสอบย้อนหลัง ลองเลือกช่วงเวลา (period) ให้สอดคล้องกันดูครับ', 'alert');
+                return;
+            }
+
+            // เอา overlay ชุดเก่า (ถ้าเคยกดแสดงมาก่อนหน้านี้) ออกก่อน กันซ้อนกันไปเรื่อยๆ
+            currentChart.data.datasets = currentChart.data.datasets.filter(ds => !ds.isBacktestOverlay);
+
+            currentChart.data.datasets.push({
+                label: 'เข้าซื้อ (Backtest)',
+                data: entryPoints,
+                borderColor: 'transparent',
+                backgroundColor: '#3ADC8F',
+                pointStyle: 'triangle',
+                pointRadius: entryPoints.map(v => v !== null ? 8 : 0),
+                pointHoverRadius: 10,
+                showLine: false,
+                isBacktestOverlay: true
+            });
+
+            currentChart.data.datasets.push({
+                label: 'ออก (Backtest)',
+                data: exitPoints,
+                borderColor: 'transparent',
+                backgroundColor: exitColors,
+                pointStyle: 'rectRot',
+                pointRadius: exitPoints.map(v => v !== null ? 7 : 0),
+                pointHoverRadius: 9,
+                showLine: false,
+                isBacktestOverlay: true
+            });
+
+            currentChart.options.plugins.tooltip = currentChart.options.plugins.tooltip || {};
+            currentChart.options.plugins.tooltip.callbacks = {
+                label: function (context) {
+                    const idx = context.dataIndex;
+                    let key = null;
+                    if (context.dataset.label === 'เข้าซื้อ (Backtest)') key = `entry-${idx}`;
+                    else if (context.dataset.label === 'ออก (Backtest)') key = `exit-${idx}`;
+                    if (key && tradeInfoByKey[key]) return tradeInfoByKey[key];
+                    return `${context.dataset.label}: $${context.formattedValue}`;
+                }
+            };
+
+            currentChart.update();
+            showToast(`แสดงจุดเข้า-ออกบนกราฟแล้ว (${matchedCount} จุด) ครับ`, 'info');
         }
     </script>
 </body>
