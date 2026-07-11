@@ -1624,6 +1624,10 @@
                         </select>
                         <button class="btn-set-alert" onclick="runEntryExitAnalysis()">วิเคราะห์</button>
                     </div>
+                    <div class="entry-exit-controls">
+                        <input type="number" id="entryExitAccountSize" class="toolbar-num" placeholder="เงินทุน ($)" value="10000" min="0" aria-label="ขนาดพอร์ต (สำหรับคำนวณจำนวนหุ้นที่แนะนำ)">
+                        <input type="number" id="entryExitRiskPercent" class="toolbar-num" placeholder="เสี่ยง % ต่อไม้" value="1" min="0.1" max="100" step="0.1" aria-label="เปอร์เซ็นต์ความเสี่ยงต่อไม้">
+                    </div>
                     <div id="entryExitResults" class="entry-exit-results">
                         <div class="news-empty">เลือกไทม์เฟรมแล้วกด "วิเคราะห์" เพื่อดูจุดเข้า-ออกที่แนะนำครับ</div>
                     </div>
@@ -2519,11 +2523,13 @@
                 return;
             }
             const tf = document.getElementById('entryExitTf').value;
+            const accountSize = parseFloat(document.getElementById('entryExitAccountSize').value) || 10000;
+            const riskPercent = parseFloat(document.getElementById('entryExitRiskPercent').value) || 1;
             const container = document.getElementById('entryExitResults');
             container.innerHTML = `<div class="news-empty">กำลังวิเคราะห์...</div>`;
 
             try {
-                const response = await fetch(`${API_BASE}/entry-exit/${currentTicker}?tf=${tf}`);
+                const response = await fetch(`${API_BASE}/entry-exit/${currentTicker}?tf=${tf}&account_size=${accountSize}&risk_percent=${riskPercent}`);
                 const data = await response.json();
                 if (data.error) {
                     container.innerHTML = `<div class="news-empty">${data.error}</div>`;
@@ -2569,7 +2575,28 @@
                     html += `<div class="ee-conditions-list" style="margin-bottom:14px;">
                         <div class="ee-condition-row"><span>⚖️ Risk : Reward ≈ 1 : ${data.risk_reward_ratio}</span></div>
                         <div class="ee-condition-row"><span>📊 ADX: ${data.adx ?? '-'} &nbsp;|&nbsp; RSI: ${data.rsi ?? '-'} &nbsp;|&nbsp; ATR: ${data.atr ?? '-'}</span></div>
+                        ${data.smart_money_zone_source ? `<div class="ee-condition-row"><span>💰 อยู่ในโซน ${data.smart_money_zone_source} ขาขึ้น</span></div>` : ''}
                     </div>`;
+                }
+
+                if (data.position_sizing) {
+                    const ps = data.position_sizing;
+                    html += `
+                        <div class="ee-levels">
+                            <div class="ee-level-box">
+                                <div class="ee-level-value">${ps.suggested_shares}</div>
+                                <div class="ee-level-label">จำนวนหุ้นที่แนะนำ</div>
+                            </div>
+                            <div class="ee-level-box">
+                                <div class="ee-level-value">$${ps.risk_amount}</div>
+                                <div class="ee-level-label">เงินที่เสี่ยงจริง (${ps.risk_percent}%)</div>
+                            </div>
+                            <div class="ee-level-box">
+                                <div class="ee-level-value">$${ps.suggested_position_value}</div>
+                                <div class="ee-level-label">มูลค่าที่ควรใช้ซื้อ</div>
+                            </div>
+                        </div>
+                    `;
                 }
             }
 

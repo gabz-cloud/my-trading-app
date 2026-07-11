@@ -366,6 +366,69 @@ def calculate_adx(df, period=14):
     return adx, plus_di, minus_di
 
 
+def detect_recent_fvg_zone(df, lookback=50):
+    """
+    หา Fair Value Gap (FVG) ล่าสุดที่ยังไม่ถูก mitigate (ราคายังไม่เคยเทรดกลับเข้าไปเต็มโซนหลังเกิด)
+    Bullish FVG: low ของแท่ง i สูงกว่า high ของแท่ง i-2 (ช่องว่างที่ราคาไม่เคยเทรดผ่าน)
+    Bearish FVG: high ของแท่ง i ต่ำกว่า low ของแท่ง i-2
+    คืนค่าโซนล่าสุดของแต่ละฝั่ง (top, bottom) หรือ None ถ้าไม่เจอเลยในช่วง lookback
+    """
+    high = df['High']
+    low = df['Low']
+    n = len(df)
+    start = max(2, n - lookback)
+
+    bullish_zone = None
+    bearish_zone = None
+
+    for i in range(start, n):
+        if low.iloc[i] > high.iloc[i - 2]:
+            bullish_zone = {"top": float(low.iloc[i]), "bottom": float(high.iloc[i - 2])}
+        if high.iloc[i] < low.iloc[i - 2]:
+            bearish_zone = {"top": float(low.iloc[i - 2]), "bottom": float(high.iloc[i])}
+
+    return bullish_zone, bearish_zone
+
+
+def detect_recent_order_block(df, lookback=50, structure_lookback=8):
+    """
+    หา Order Block แบบง่าย: แท่งสวนทางล่าสุดก่อนเกิดการทำ high/low ใหม่เหนือ/ใต้กรอบ structure_lookback แท่งก่อนหน้า
+    (แท่งแดงล่าสุดก่อนวิ่งขึ้นแรง = bullish OB, แท่งเขียวล่าสุดก่อนวิ่งลงแรง = bearish OB)
+    เป็นนิยามแบบง่าย ไม่ใช่การตรวจจับ OB แบบเต็มรูปแบบทุกกรณี แต่จับรูปแบบหลักที่พบบ่อยได้
+    """
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
+    open_ = df['Open']
+    n = len(df)
+
+    bullish_ob = None
+    bearish_ob = None
+
+    if n <= structure_lookback:
+        return None, None
+
+    start = max(structure_lookback, n - lookback)
+
+    for i in range(start, n):
+        window_high = high.iloc[i - structure_lookback:i].max()
+        window_low = low.iloc[i - structure_lookback:i].min()
+
+        if high.iloc[i] > window_high:
+            for j in range(i - 1, max(i - structure_lookback, 0) - 1, -1):
+                if close.iloc[j] < open_.iloc[j]:  # แท่งแดง (ปิดต่ำกว่าเปิด)
+                    bullish_ob = {"top": float(high.iloc[j]), "bottom": float(low.iloc[j])}
+                    break
+
+        if low.iloc[i] < window_low:
+            for j in range(i - 1, max(i - structure_lookback, 0) - 1, -1):
+                if close.iloc[j] > open_.iloc[j]:  # แท่งเขียว (ปิดสูงกว่าเปิด)
+                    bearish_ob = {"top": float(high.iloc[j]), "bottom": float(low.iloc[j])}
+                    break
+
+    return bullish_ob, bearish_ob
+
+
 def series_to_json_list(series, ndigits=2):
     """แปลง pandas Series เป็น list ที่ปลอดภัยสำหรับ JSON (NaN -> None)"""
     return [round(float(x), ndigits) if pd.notna(x) else None for x in series]
@@ -788,12 +851,16 @@ ENTRY_EXIT_PERIOD_MAP = {"1m": "1d", "5m": "5d", "15m": "5d", "30m": "30d", "1h"
 
 
 @app.get("/entry-exit/{ticker}")
-def analyze_entry_exit(ticker: str, tf: str = "1d"):
+def analyze_entry_exit(ticker: str, tf: str = "1d", account_size: float = 10000.0, risk_percent: float = 1.0):
     ticker_upper = ticker.upper()
     if tf not in ENTRY_EXIT_INTERVAL_MAP:
         tf = "1d"
+    if account_size <= 0:
+        account_size = 10000.0
+    if risk_percent <= 0 or risk_percent > 100:
+        risk_percent = 1.0
 
-    cache_key = f"entry-exit:{ticker_upper}:{tf}"
+    cache_key = f"entry-exit:{ticker_upper}:{tf}:{account_size}:{risk_percent}"
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
@@ -839,11 +906,27 @@ def analyze_entry_exit(ticker: str, tf: str = "1d"):
                 if avg_volume_20 > 0:
                     volume_ok = current_volume > avg_volume_20
 
+        # ===== Smart Money Zone (Order Block / FVG) — ราคาตอนนี้อยู่ในโซนที่เคยเกิด
+        # การเทรดหนาแน่นก่อนวิ่งขึ้น (OB) หรือช่องว่างราคาที่ยังไม่ถูกเติมเต็ม (FVG) ไหม
+        # ถ้าใช่ ถือเป็นสัญญาณเสริมว่าเป็นจุดที่ "แนวโน้มน่าจะเด้งกลับขึ้น" ตามหลัก SMC =====
+        bullish_fvg, _ = detect_recent_fvg_zone(df)
+        bullish_ob, _ = detect_recent_order_block(df)
+
+        in_smart_money_zone = False
+        zone_source = None
+        if bullish_fvg and bullish_fvg["bottom"] <= current_price <= bullish_fvg["top"]:
+            in_smart_money_zone = True
+            zone_source = "FVG"
+        elif bullish_ob and bullish_ob["bottom"] <= current_price <= bullish_ob["top"]:
+            in_smart_money_zone = True
+            zone_source = "Order Block"
+
         conditions = [
             {"key": "trend", "name": "เทรนด์ขาขึ้น (EMA10 > EMA20)", "met": trend_bullish},
             {"key": "trend_strength", "name": "เทรนด์แข็งแกร่งพอ (ADX ≥ 20)", "met": trend_strong},
             {"key": "rsi", "name": "RSI ยังไม่ overbought (< 70)", "met": rsi_not_overbought},
             {"key": "macd", "name": "โมเมนตัม MACD เป็นบวก", "met": macd_bullish},
+            {"key": "smart_money_zone", "name": "ราคาอยู่ในโซน Order Block/FVG ขาขึ้น (Smart Money)", "met": in_smart_money_zone},
         ]
         if volume_ok is not None:
             conditions.append({"key": "volume", "name": "ปริมาณซื้อขายสูงกว่าค่าเฉลี่ย 20 แท่ง", "met": volume_ok})
@@ -870,13 +953,26 @@ def analyze_entry_exit(ticker: str, tf: str = "1d"):
         stop_loss = None
         take_profit = None
         risk_reward_ratio = None
+        position_sizing = None
         if atr_value is not None and atr_value > 0:
             stop_loss = round(current_price - 2 * atr_value, 2)
             take_profit = round(current_price + 3 * atr_value, 2)
-            risk = current_price - stop_loss
-            reward = take_profit - current_price
-            if risk > 0:
-                risk_reward_ratio = round(reward / risk, 2)
+            risk_per_share = current_price - stop_loss
+            reward_per_share = take_profit - current_price
+            if risk_per_share > 0:
+                risk_reward_ratio = round(reward_per_share / risk_per_share, 2)
+
+                # ===== Position Sizing แบบอิงความเสี่ยง % ของพอร์ต แทนการเดาจำนวนหุ้นเอง =====
+                # สูตร: จำนวนหุ้น = (พอร์ต × risk%) ÷ ระยะห่างจากราคาเข้าถึงจุด stop-loss (ต่อหุ้น)
+                risk_amount = account_size * (risk_percent / 100)
+                suggested_shares = int(risk_amount / risk_per_share)
+                position_sizing = {
+                    "account_size": account_size,
+                    "risk_percent": risk_percent,
+                    "risk_amount": round(risk_amount, 2),
+                    "suggested_shares": suggested_shares,
+                    "suggested_position_value": round(suggested_shares * current_price, 2)
+                }
 
         result = {
             "ticker": ticker_upper,
@@ -887,12 +983,14 @@ def analyze_entry_exit(ticker: str, tf: str = "1d"):
             "conditions_met": met_count,
             "conditions_total": total_count,
             "conditions": conditions,
+            "smart_money_zone_source": zone_source,
             "adx": round(adx_value, 2) if adx_value is not None else None,
             "rsi": round(rsi_value, 2) if rsi_value is not None else None,
             "atr": round(atr_value, 2) if atr_value is not None else None,
             "suggested_stop_loss": stop_loss,
             "suggested_take_profit": take_profit,
             "risk_reward_ratio": risk_reward_ratio,
+            "position_sizing": position_sizing,
             "is_stale": False
         }
 
@@ -909,19 +1007,159 @@ def analyze_entry_exit(ticker: str, tf: str = "1d"):
         return {"error": str(e)}
 
 
-# ========= Backtest: จำลองสัญญาณ BUY/HOLD เดิม (EMA10 ตัด EMA20) กับข้อมูลราคาย้อนหลัง =========
-# เพื่อวัดว่าสัญญาณที่แอปใช้อยู่ตอนนี้ "แม่น" แค่ไหนในอดีต ก่อนจะปรับปรุงอะไรเพิ่ม
+# ========= Backtest: จำลองสัญญาณย้อนหลัง เลือกได้ 2 กลยุทธ์ =========
+# "simple" = ตรรกะเดิม (EMA10 ตัด EMA20 อย่างเดียว)
+# "advanced" = ตรรกะเดียวกับหน้า "จุดเข้า-ออก" (5 เงื่อนไขยืนยัน + stop-loss/take-profit จาก ATR)
+# แยกไว้ให้เทียบกันตรงๆได้ว่าตรรกะใหม่ดีขึ้นจริงหรือเปล่า เทียบกับของเดิม
 BACKTEST_CACHE_TTL = 3600  # 1 ชั่วโมง (ข้อมูลย้อนหลังไม่เปลี่ยนบ่อยในระยะสั้น)
 VALID_BACKTEST_PERIODS = {"3mo", "6mo", "1y", "2y"}
+VALID_BACKTEST_STRATEGIES = {"simple", "advanced"}
+
+
+def _simulate_simple_strategy(df):
+    """ตรรกะเดิม: เข้าตอน EMA10 ตัดขึ้น EMA20, ออกตอนตัดกลับลง"""
+    close = df['Close'].dropna()
+    ema10 = close.ewm(span=10, adjust=False).mean()
+    ema20 = close.ewm(span=20, adjust=False).mean()
+    is_buy_signal = ema10 > ema20
+
+    dates = close.index
+    trades = []
+    holding = False
+    entry_price = None
+    entry_date = None
+
+    for i in range(len(close)):
+        sig_buy = bool(is_buy_signal.iloc[i])
+        price = float(close.iloc[i])
+        date_str = dates[i].strftime('%Y-%m-%d')
+
+        if not holding and sig_buy:
+            holding = True
+            entry_price = price
+            entry_date = date_str
+        elif holding and not sig_buy:
+            exit_price = price
+            return_pct = round((exit_price - entry_price) / entry_price * 100, 2)
+            trades.append({
+                "entry_date": entry_date, "entry_price": round(entry_price, 2),
+                "exit_date": date_str, "exit_price": round(exit_price, 2),
+                "return_percent": return_pct, "is_win": return_pct > 0,
+                "exit_reason": "signal_reversal"
+            })
+            holding = False
+            entry_price = None
+            entry_date = None
+
+    open_position = None
+    if holding:
+        last_price = float(close.iloc[-1])
+        unrealized_pct = round((last_price - entry_price) / entry_price * 100, 2)
+        open_position = {
+            "entry_date": entry_date, "entry_price": round(entry_price, 2),
+            "current_price": round(last_price, 2), "unrealized_return_percent": unrealized_pct
+        }
+
+    return trades, open_position
+
+
+def _simulate_advanced_strategy(df):
+    """
+    ตรรกะเดียวกับหน้า 'จุดเข้า-ออก': เข้าเมื่อผ่านอย่างน้อย 4 ใน 5 เงื่อนไข
+    (เทรนด์ + ADX≥20 + RSI<70 + MACD บวก + Volume>เฉลี่ย20แท่ง) และมี ATR คำนวณได้
+    ออกเมื่อโดน stop-loss (entry - 2×ATR ตอนเข้า), take-profit (entry + 3×ATR ตอนเข้า),
+    หรือเทรนด์กลับตัว (EMA10 ตัดลงต่ำกว่า EMA20) แล้วแต่อย่างไหนถึงก่อน
+    """
+    close = df['Close'].dropna()
+    ema10 = close.ewm(span=10, adjust=False).mean()
+    ema20 = close.ewm(span=20, adjust=False).mean()
+    adx, _, _ = calculate_adx(df)
+    atr = calculate_atr(df)
+    rsi = calculate_rsi(close)
+    _, _, hist = calculate_macd(close)
+
+    has_volume = 'Volume' in df.columns
+    volume = df['Volume'] if has_volume else None
+    avg_volume_20 = volume.rolling(20).mean() if has_volume else None
+
+    dates = close.index
+    trades = []
+    holding = False
+    entry_price = None
+    entry_date = None
+    stop_loss = None
+    take_profit = None
+
+    for i in range(len(close)):
+        if i < 20:  # รอให้ rolling window (ADX/RSI/Volume เฉลี่ย) มีข้อมูลพอก่อน
+            continue
+
+        price = float(close.iloc[i])
+        date_str = dates[i].strftime('%Y-%m-%d')
+
+        if not holding:
+            trend_bullish = bool(ema10.iloc[i] > ema20.iloc[i])
+            trend_strong = pd.notna(adx.iloc[i]) and adx.iloc[i] >= 20
+            rsi_ok = pd.notna(rsi.iloc[i]) and rsi.iloc[i] < 70
+            macd_ok = pd.notna(hist.iloc[i]) and hist.iloc[i] > 0
+
+            volume_ok = True  # ถ้าไม่มีข้อมูล volume เลย ไม่ใช้เงื่อนไขนี้ตัดสิน (ไม่ควรลงโทษเพราะข้อมูลไม่ครบ)
+            if has_volume and pd.notna(avg_volume_20.iloc[i]) and avg_volume_20.iloc[i] > 0:
+                volume_ok = bool(volume.iloc[i] > avg_volume_20.iloc[i])
+
+            conditions_met = sum([trend_bullish, trend_strong, rsi_ok, macd_ok, volume_ok])
+            atr_value = float(atr.iloc[i]) if pd.notna(atr.iloc[i]) else None
+
+            if conditions_met >= 4 and atr_value and atr_value > 0:
+                holding = True
+                entry_price = price
+                entry_date = date_str
+                stop_loss = entry_price - 2 * atr_value
+                take_profit = entry_price + 3 * atr_value
+
+        else:
+            hit_stop = price <= stop_loss
+            hit_target = price >= take_profit
+            trend_reversed = bool(ema10.iloc[i] < ema20.iloc[i])
+
+            if hit_stop or hit_target or trend_reversed:
+                exit_price = price
+                return_pct = round((exit_price - entry_price) / entry_price * 100, 2)
+                reason = "stop_loss" if hit_stop else ("take_profit" if hit_target else "trend_reversal")
+                trades.append({
+                    "entry_date": entry_date, "entry_price": round(entry_price, 2),
+                    "exit_date": date_str, "exit_price": round(exit_price, 2),
+                    "return_percent": return_pct, "is_win": return_pct > 0,
+                    "exit_reason": reason
+                })
+                holding = False
+                entry_price = None
+                entry_date = None
+                stop_loss = None
+                take_profit = None
+
+    open_position = None
+    if holding:
+        last_price = float(close.iloc[-1])
+        unrealized_pct = round((last_price - entry_price) / entry_price * 100, 2)
+        open_position = {
+            "entry_date": entry_date, "entry_price": round(entry_price, 2),
+            "current_price": round(last_price, 2), "unrealized_return_percent": unrealized_pct,
+            "stop_loss": round(stop_loss, 2), "take_profit": round(take_profit, 2)
+        }
+
+    return trades, open_position
 
 
 @app.get("/backtest/{ticker}")
-def run_backtest(ticker: str, period: str = "1y"):
+def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple"):
     ticker_upper = ticker.upper()
     if period not in VALID_BACKTEST_PERIODS:
         period = "1y"
+    if strategy not in VALID_BACKTEST_STRATEGIES:
+        strategy = "simple"
 
-    cache_key = f"backtest:{ticker_upper}:{period}"
+    cache_key = f"backtest:{ticker_upper}:{period}:{strategy}"
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
@@ -934,53 +1172,11 @@ def run_backtest(ticker: str, period: str = "1y"):
             return {"error": "ข้อมูลไม่พอสำหรับทดสอบย้อนหลัง (ต้องการอย่างน้อย ~25 วันทำการ)"}
 
         close = df['Close'].dropna()
-        ema10 = close.ewm(span=10, adjust=False).mean()
-        ema20 = close.ewm(span=20, adjust=False).mean()
-        is_buy_signal = ema10 > ema20  # True = BUY, False = HOLD (สูตรเดียวกับที่แอปใช้จริง)
 
-        dates = close.index
-        trades = []
-        holding = False
-        entry_price = None
-        entry_date = None
-
-        # เดินไล่ทีละวัน: เข้าซื้อตอนสัญญาณเปลี่ยนเป็น BUY, ขายตอนสัญญาณเปลี่ยนกลับเป็น HOLD
-        for i in range(len(close)):
-            sig_buy = bool(is_buy_signal.iloc[i])
-            price = float(close.iloc[i])
-            date_str = dates[i].strftime('%Y-%m-%d')
-
-            if not holding and sig_buy:
-                holding = True
-                entry_price = price
-                entry_date = date_str
-            elif holding and not sig_buy:
-                exit_price = price
-                return_pct = round((exit_price - entry_price) / entry_price * 100, 2)
-                trades.append({
-                    "entry_date": entry_date,
-                    "entry_price": round(entry_price, 2),
-                    "exit_date": date_str,
-                    "exit_price": round(exit_price, 2),
-                    "return_percent": return_pct,
-                    "is_win": return_pct > 0
-                })
-                holding = False
-                entry_price = None
-                entry_date = None
-
-        # ถ้ายังถือ position ค้างอยู่ตอนจบช่วงเวลาที่ทดสอบ ไม่นับเป็น trade ที่จบแล้ว
-        # แต่รายงานแยกไว้ต่างหากว่า "ยังเปิดอยู่ กำไร/ขาดทุนล่าสุดเท่าไหร่"
-        open_position = None
-        if holding:
-            last_price = float(close.iloc[-1])
-            unrealized_pct = round((last_price - entry_price) / entry_price * 100, 2)
-            open_position = {
-                "entry_date": entry_date,
-                "entry_price": round(entry_price, 2),
-                "current_price": round(last_price, 2),
-                "unrealized_return_percent": unrealized_pct
-            }
+        if strategy == "advanced":
+            trades, open_position = _simulate_advanced_strategy(df)
+        else:
+            trades, open_position = _simulate_simple_strategy(df)
 
         total_trades = len(trades)
         win_count = sum(1 for t in trades if t["is_win"])
@@ -1002,6 +1198,7 @@ def run_backtest(ticker: str, period: str = "1y"):
         result = {
             "ticker": ticker_upper,
             "period": period,
+            "strategy": strategy,
             "data_points": len(close),
             "total_trades": total_trades,
             "win_count": win_count,
