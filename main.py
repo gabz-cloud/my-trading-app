@@ -1195,6 +1195,11 @@ def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple"):
         last_close_price = float(close.iloc[-1])
         buy_hold_return = round((last_close_price - first_close) / first_close * 100, 2)
 
+        # ส่งราคาย้อนหลังทั้งช่วงที่ทดสอบกลับไปด้วย เพื่อให้ frontend วาดกราฟจุดเข้า-ออกได้ตรงวันที่แน่นอน
+        # (กราฟราคาปกติโชว์แค่ 3 เดือนล่าสุด แต่ backtest อาจทดสอบยาวถึง 1-2 ปี ถ้าใช้กราฟเดิมวันที่จะไม่ตรงกัน)
+        chart_data = [round(x, 2) for x in close.tolist()]
+        chart_dates = [d.strftime('%Y-%m-%d') for d in close.index]
+
         result = {
             "ticker": ticker_upper,
             "period": period,
@@ -1208,7 +1213,9 @@ def run_backtest(ticker: str, period: str = "1y", strategy: str = "simple"):
             "strategy_total_return_percent": strategy_total_return,
             "buy_hold_return_percent": buy_hold_return,
             "open_position": open_position,
-            "trades": trades
+            "trades": trades,
+            "chart_data": chart_data,
+            "chart_dates": chart_dates
         }
 
         cache_set(cache_key, result, BACKTEST_CACHE_TTL)
