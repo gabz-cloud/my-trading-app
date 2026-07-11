@@ -346,6 +346,29 @@
         .ee-recommendation.weak { background: var(--input-bg); color: var(--text-muted); border: 1px solid var(--border-color); }
         .ee-recommendation.none { background: rgba(240, 90, 90, 0.12); color: var(--down-color); border: 1px solid rgba(240, 90, 90, 0.3); }
 
+        .ee-entry-banner {
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 13.5px;
+            margin-bottom: 14px;
+            text-align: center;
+            background: rgba(79, 209, 197, 0.12);
+            border: 1px solid rgba(79, 209, 197, 0.35);
+            color: var(--accent-teal);
+        }
+        .ee-entry-banner-muted {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .ee-entry-price { font-family: 'JetBrains Mono', monospace; font-size: 15px; }
+        .ee-level-box-highlight {
+            border: 1.5px solid var(--accent-teal);
+            background: rgba(79, 209, 197, 0.08);
+        }
+
         .ee-conditions-list { margin-bottom: 16px; }
         .ee-condition-row {
             display: flex;
@@ -1010,6 +1033,7 @@
             flex-shrink: 0;
         }
         .btn-reset-zoom:hover { border-color: var(--accent-teal); color: var(--accent-teal); }
+        .chart-zoom-buttons { display: flex; gap: 6px; flex-shrink: 0; }
 
         .chart-container {
             position: relative;
@@ -1623,8 +1647,12 @@
 
                 <div class="detail-right">
                     <div class="chart-toolbar">
-                        <span class="chart-zoom-hint">🔍 เมาส์: หมุนล้อเพื่อซูม, ลากเพื่อเลื่อน | มือถือ: บีบนิ้วเพื่อซูม</span>
-                        <button class="btn-reset-zoom" onclick="resetChartZoom()">รีเซ็ตซูม</button>
+                        <span class="chart-zoom-hint">💡 ต้องซูมเข้าก่อน ถึงจะลากเลื่อนซ้าย-ขวาได้ (ถ้าซูม 100% เต็มช่วงอยู่แล้วจะเลื่อนไม่ได้ เพราะเห็นข้อมูลครบทุกจุดแล้ว)</span>
+                        <div class="chart-zoom-buttons">
+                            <button class="btn-reset-zoom" onclick="zoomChartOut()" aria-label="ซูมออก">🔍−</button>
+                            <button class="btn-reset-zoom" onclick="zoomChartIn()" aria-label="ซูมเข้า">🔍+</button>
+                            <button class="btn-reset-zoom" onclick="resetChartZoom()">รีเซ็ตซูม</button>
+                        </div>
                     </div>
                     <div class="chart-container">
                         <canvas id="cryptoChart"></canvas>
@@ -2653,7 +2681,16 @@
         function renderEntryExitResults(data) {
             const container = document.getElementById('entryExitResults');
 
+            const isFavorable = data.entry_strength === 'strong' || data.entry_strength === 'moderate';
+
             let html = `<div class="ee-recommendation ${data.entry_strength}">${data.entry_recommendation}</div>`;
+
+            // บอกจุดเข้าซื้อแบบชัดเจนตรงๆ แยกจาก "ราคาปัจจุบัน" เฉยๆ ที่คนอ่านแล้วงงว่าคือจุดเข้าหรือเปล่า
+            if (isFavorable) {
+                html += `<div class="ee-entry-banner">📍 จุดเข้าซื้อ (BUY) ที่แนะนำ: <span class="ee-entry-price">$${data.current_price}</span></div>`;
+            } else {
+                html += `<div class="ee-entry-banner ee-entry-banner-muted">⏸️ ยังไม่แนะนำให้เข้าซื้อตอนนี้ — ราคาปัจจุบัน $${data.current_price} เป็นแค่ข้อมูลอ้างอิง ไม่ใช่จุดเข้า</div>`;
+            }
 
             html += `<div class="ee-conditions-list">`;
             data.conditions.forEach(c => {
@@ -2663,19 +2700,20 @@
             html += `</div>`;
 
             if (data.suggested_stop_loss !== null && data.suggested_take_profit !== null) {
+                const midLabel = isFavorable ? '📍 จุดเข้าซื้อ (BUY)' : 'ราคาปัจจุบัน (ยังไม่แนะนำเข้า)';
                 html += `
                     <div class="ee-levels">
                         <div class="ee-level-box">
                             <div class="ee-level-value down">$${data.suggested_stop_loss}</div>
-                            <div class="ee-level-label">จุดตัดขาดทุน (${data.sl_atr_mult}×ATR)</div>
+                            <div class="ee-level-label">🔴 ตัดขาดทุนที่นี่ (${data.sl_atr_mult}×ATR)</div>
                         </div>
-                        <div class="ee-level-box">
+                        <div class="ee-level-box ${isFavorable ? 'ee-level-box-highlight' : ''}">
                             <div class="ee-level-value">$${data.current_price}</div>
-                            <div class="ee-level-label">ราคาปัจจุบัน</div>
+                            <div class="ee-level-label">${midLabel}</div>
                         </div>
                         <div class="ee-level-box">
                             <div class="ee-level-value up">$${data.suggested_take_profit}</div>
-                            <div class="ee-level-label">จุดทำกำไร (${data.tp_atr_mult}×ATR)</div>
+                            <div class="ee-level-label">🟢 ขายทำกำไรที่นี่ (${data.tp_atr_mult}×ATR)</div>
                         </div>
                     </div>
                 `;
@@ -4133,18 +4171,36 @@
 
         // ========= ซูม/เลื่อนกราฟราคา ========= 
         // ช่วยเวลากราฟมีจุดเข้า-ออกเยอะ (โดยเฉพาะกลยุทธ์ EMA เดิมที่เทรดถี่) จะได้ซูมดูทีละช่วงได้
+        // หมายเหตุสำคัญ: ตอนกราฟแสดงเต็มช่วงข้อมูล (ซูม 100%) จะ "เลื่อนซ้าย-ขวาไม่ได้เลย"
+        // เพราะไม่มีอะไรให้เลื่อนไปหา (เห็นข้อมูลครบทุกจุดอยู่แล้ว) ต้อง "ซูมเข้าก่อน" ถึงจะเลื่อนได้จริง
         const CHART_ZOOM_CONFIG = {
             pan: { enabled: true, mode: 'x' },
             zoom: {
                 wheel: { enabled: true },
                 pinch: { enabled: true },
                 mode: 'x'
+            },
+            limits: {
+                x: { min: 'original', max: 'original' }
             }
         };
 
         function resetChartZoom() {
             if (currentChart && typeof currentChart.resetZoom === 'function') {
                 currentChart.resetZoom();
+            }
+        }
+
+        // ปุ่มซูมเข้า/ออกแบบกดตรงๆ (ไม่ต้องพึ่งล้อเมาส์/บีบนิ้วซึ่งบางอุปกรณ์อาจใช้ไม่ถนัด)
+        // กดซูมเข้าก่อน แล้วค่อยลากเพื่อเลื่อนดูช่วงอื่นได้
+        function zoomChartIn() {
+            if (currentChart && typeof currentChart.zoom === 'function') {
+                currentChart.zoom(1.4);
+            }
+        }
+        function zoomChartOut() {
+            if (currentChart && typeof currentChart.zoom === 'function') {
+                currentChart.zoom(0.7);
             }
         }
 
