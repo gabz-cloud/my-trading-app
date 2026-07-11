@@ -307,6 +307,62 @@
         #indicatorsWrap:not(.collapsed) { margin-top: 14px; }
         .indicators-section { margin-top: 24px; }
         .backtest-section { margin-top: 24px; }
+        .entry-exit-section { margin-top: 24px; }
+
+        .entry-exit-controls { display: flex; gap: 8px; margin-bottom: 16px; }
+        .entry-exit-controls select {
+            padding: 9px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .ee-recommendation {
+            padding: 14px 16px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 14px;
+            text-align: center;
+        }
+        .ee-recommendation.strong { background: rgba(58, 214, 143, 0.15); color: var(--up-color); border: 1px solid rgba(58, 214, 143, 0.35); }
+        .ee-recommendation.moderate { background: rgba(232, 179, 76, 0.15); color: var(--accent-gold); border: 1px solid rgba(232, 179, 76, 0.35); }
+        .ee-recommendation.weak { background: var(--input-bg); color: var(--text-muted); border: 1px solid var(--border-color); }
+        .ee-recommendation.none { background: rgba(240, 90, 90, 0.12); color: var(--down-color); border: 1px solid rgba(240, 90, 90, 0.3); }
+
+        .ee-conditions-list { margin-bottom: 16px; }
+        .ee-condition-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 4px;
+            font-size: 12.5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .ee-condition-row:last-child { border-bottom: none; }
+        .ee-condition-icon { flex-shrink: 0; }
+
+        .ee-levels {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .ee-level-box {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 8px;
+            text-align: center;
+        }
+        .ee-level-value { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; }
+        .ee-level-value.down { color: var(--down-color); }
+        .ee-level-value.up { color: var(--up-color); }
+        .ee-level-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
+        .ee-disclaimer { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
 
         .backtest-controls { display: flex; gap: 8px; margin-bottom: 16px; }
         .backtest-controls select {
@@ -1548,6 +1604,32 @@
                 </div>
             </div>
 
+            <div class="entry-exit-section">
+                <div class="news-section-header" role="button" tabindex="0" id="entryExitSectionHeader"
+                    aria-expanded="false" aria-controls="entryExitWrap" aria-label="ย่อ/ขยายจุดเข้า-ออก"
+                    onclick="toggleEntryExitSection()"
+                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleEntryExitSection();}">
+                    <span class="news-section-title">🎯 จุดเข้า-ออก</span>
+                    <span id="entryExitToggleIcon" class="news-toggle-icon">▼</span>
+                </div>
+                <div id="entryExitWrap" class="collapsible-wrap collapsed">
+                    <div class="entry-exit-controls">
+                        <select id="entryExitTf" aria-label="ไทม์เฟรมสำหรับวิเคราะห์จุดเข้า">
+                            <option value="1m">1 นาที</option>
+                            <option value="5m">5 นาที</option>
+                            <option value="15m">15 นาที</option>
+                            <option value="30m">30 นาที</option>
+                            <option value="1h">1 ชั่วโมง</option>
+                            <option value="1d" selected>1 วัน</option>
+                        </select>
+                        <button class="btn-set-alert" onclick="runEntryExitAnalysis()">วิเคราะห์</button>
+                    </div>
+                    <div id="entryExitResults" class="entry-exit-results">
+                        <div class="news-empty">เลือกไทม์เฟรมแล้วกด "วิเคราะห์" เพื่อดูจุดเข้า-ออกที่แนะนำครับ</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="backtest-section">
                 <div class="news-section-header" role="button" tabindex="0" id="backtestSectionHeader"
                     aria-expanded="false" aria-controls="backtestWrap" aria-label="ย่อ/ขยายผลทดสอบย้อนหลัง"
@@ -2419,6 +2501,81 @@
             if (!nowCollapsed && macdChartInstance) {
                 setTimeout(() => macdChartInstance.resize(), 50);
             }
+        }
+
+        function toggleEntryExitSection() {
+            const wrap = document.getElementById('entryExitWrap');
+            const icon = document.getElementById('entryExitToggleIcon');
+            const header = document.getElementById('entryExitSectionHeader');
+            const nowCollapsed = !wrap.classList.contains('collapsed');
+            wrap.classList.toggle('collapsed', nowCollapsed);
+            icon.innerText = nowCollapsed ? '▼' : '▲';
+            header.setAttribute('aria-expanded', String(!nowCollapsed));
+        }
+
+        async function runEntryExitAnalysis() {
+            if (!currentTicker) {
+                showToast('กรุณาเปิดหน้าหุ้นก่อนครับ', 'alert');
+                return;
+            }
+            const tf = document.getElementById('entryExitTf').value;
+            const container = document.getElementById('entryExitResults');
+            container.innerHTML = `<div class="news-empty">กำลังวิเคราะห์...</div>`;
+
+            try {
+                const response = await fetch(`${API_BASE}/entry-exit/${currentTicker}?tf=${tf}`);
+                const data = await response.json();
+                if (data.error) {
+                    container.innerHTML = `<div class="news-empty">${data.error}</div>`;
+                    return;
+                }
+                handleStaleFlag(data);
+                renderEntryExitResults(data);
+            } catch (e) {
+                container.innerHTML = `<div class="news-empty">เกิดข้อผิดพลาดในการเชื่อมต่อ ลองใหม่อีกครั้งครับ</div>`;
+            }
+        }
+
+        function renderEntryExitResults(data) {
+            const container = document.getElementById('entryExitResults');
+
+            let html = `<div class="ee-recommendation ${data.entry_strength}">${data.entry_recommendation}</div>`;
+
+            html += `<div class="ee-conditions-list">`;
+            data.conditions.forEach(c => {
+                const icon = c.met ? '✅' : '⬜';
+                html += `<div class="ee-condition-row"><span class="ee-condition-icon">${icon}</span><span>${c.name}</span></div>`;
+            });
+            html += `</div>`;
+
+            if (data.suggested_stop_loss !== null && data.suggested_take_profit !== null) {
+                html += `
+                    <div class="ee-levels">
+                        <div class="ee-level-box">
+                            <div class="ee-level-value down">$${data.suggested_stop_loss}</div>
+                            <div class="ee-level-label">จุดตัดขาดทุน (Stop Loss)</div>
+                        </div>
+                        <div class="ee-level-box">
+                            <div class="ee-level-value">$${data.current_price}</div>
+                            <div class="ee-level-label">ราคาปัจจุบัน</div>
+                        </div>
+                        <div class="ee-level-box">
+                            <div class="ee-level-value up">$${data.suggested_take_profit}</div>
+                            <div class="ee-level-label">จุดทำกำไร (Take Profit)</div>
+                        </div>
+                    </div>
+                `;
+                if (data.risk_reward_ratio !== null) {
+                    html += `<div class="ee-conditions-list" style="margin-bottom:14px;">
+                        <div class="ee-condition-row"><span>⚖️ Risk : Reward ≈ 1 : ${data.risk_reward_ratio}</span></div>
+                        <div class="ee-condition-row"><span>📊 ADX: ${data.adx ?? '-'} &nbsp;|&nbsp; RSI: ${data.rsi ?? '-'} &nbsp;|&nbsp; ATR: ${data.atr ?? '-'}</span></div>
+                    </div>`;
+                }
+            }
+
+            html += `<div class="ee-disclaimer">⚠️ จุด stop-loss/take-profit คำนวณจากความผันผวนย้อนหลัง (ATR) เป็นแนวทางเบื้องต้นเท่านั้น ไม่ใช่คำแนะนำการลงทุน ควรพิจารณาปัจจัยอื่นประกอบด้วยเสมอ</div>`;
+
+            container.innerHTML = html;
         }
 
         function toggleBacktestSection() {

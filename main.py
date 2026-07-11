@@ -318,6 +318,54 @@ def calculate_macd(close, fast=12, slow=26, signal=9):
     return macd_line, signal_line, histogram
 
 
+def calculate_true_range(df):
+    """True Range มาตรฐาน: ค่าที่มากสุดของ (high-low), |high-prev_close|, |low-prev_close|"""
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
+    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+
+def calculate_atr(df, period=14):
+    """
+    ATR (Average True Range) — วัดความผันผวนจริงของหุ้นตัวนั้นๆ ใช้กำหนดจุด stop-loss/take-profit
+    ที่ "เหมาะกับหุ้นตัวนี้จริง" แทนเปอร์เซ็นต์ตายตัว (หุ้นผันผวนสูงควรมีระยะ stop กว้างกว่าหุ้นนิ่ง)
+    """
+    tr = calculate_true_range(df)
+    return tr.ewm(alpha=1 / period, adjust=False).mean()
+
+
+def calculate_adx(df, period=14):
+    """
+    ADX (Average Directional Index) — วัด "ความแข็งแกร่งของเทรนด์" ไม่สนใจทิศทาง
+    ค่าต่ำ (< 20) = ตลาด sideways ไม่มีทิศทางชัดเจน สัญญาณ BUY/HOLD ช่วงนี้เชื่อถือได้น้อย
+    ค่าสูง (>= 20-25) = มีเทรนด์จริง สัญญาณน่าเชื่อถือกว่า
+    """
+    high = df['High']
+    low = df['Low']
+
+    up_move = high.diff()
+    down_move = -low.diff()
+
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+
+    tr = calculate_true_range(df)
+    atr = tr.ewm(alpha=1 / period, adjust=False).mean()
+
+    plus_di = 100 * (plus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr)
+    minus_di = 100 * (minus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr)
+
+    di_sum = (plus_di + minus_di).replace(0, np.nan)  # กัน division by zero ตอนไม่มีการเคลื่อนไหวเลย
+    dx = 100 * (plus_di - minus_di).abs() / di_sum
+    adx = dx.ewm(alpha=1 / period, adjust=False).mean()
+
+    return adx, plus_di, minus_di
+
+
 def series_to_json_list(series, ndigits=2):
     """แปลง pandas Series เป็น list ที่ปลอดภัยสำหรับ JSON (NaN -> None)"""
     return [round(float(x), ndigits) if pd.notna(x) else None for x in series]
@@ -730,6 +778,135 @@ def get_stock_news(ticker: str):
         return result
     except Exception as e:
         return {"error": str(e), "news": []}
+
+
+# ========= จุดเข้า-ออก (Entry/Exit Analysis) =========
+# รวมหลายเงื่อนไขยืนยันกัน (ไม่ใช่แค่ EMA crossover เดี่ยวๆ) เพื่อลดสัญญาณหลอก
+# และคำนวณจุด stop-loss/take-profit จาก ATR ให้รู้จุดออกล่วงหน้าชัดเจน ไม่ต้องรอสัญญาณ lag
+ENTRY_EXIT_INTERVAL_MAP = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h", "1d": "1d"}
+ENTRY_EXIT_PERIOD_MAP = {"1m": "1d", "5m": "5d", "15m": "5d", "30m": "30d", "1h": "30d", "1d": "6mo"}
+
+
+@app.get("/entry-exit/{ticker}")
+def analyze_entry_exit(ticker: str, tf: str = "1d"):
+    ticker_upper = ticker.upper()
+    if tf not in ENTRY_EXIT_INTERVAL_MAP:
+        tf = "1d"
+
+    cache_key = f"entry-exit:{ticker_upper}:{tf}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    target_tf = ENTRY_EXIT_INTERVAL_MAP[tf]
+    target_period = ENTRY_EXIT_PERIOD_MAP[tf]
+
+    try:
+        stock = yf.Ticker(ticker_upper)
+        df = stock.history(period=target_period, interval=target_tf)
+
+        if df.empty or len(df) < 25:
+            return {"error": f"ข้อมูลไม่พอสำหรับวิเคราะห์ที่ TF {tf} (ต้องการอย่างน้อย ~25 แท่ง)"}
+
+        close = df['Close'].dropna()
+        current_price = float(close.iloc[-1])
+
+        ema10 = close.ewm(span=10, adjust=False).mean()
+        ema20 = close.ewm(span=20, adjust=False).mean()
+        trend_bullish = bool(ema10.iloc[-1] > ema20.iloc[-1])
+
+        adx, plus_di, minus_di = calculate_adx(df)
+        adx_value = float(adx.iloc[-1]) if pd.notna(adx.iloc[-1]) else None
+        trend_strong = adx_value is not None and adx_value >= 20
+
+        atr_series = calculate_atr(df)
+        atr_value = float(atr_series.iloc[-1]) if pd.notna(atr_series.iloc[-1]) else None
+
+        rsi_series = calculate_rsi(close)
+        rsi_value = float(rsi_series.iloc[-1]) if pd.notna(rsi_series.iloc[-1]) else None
+        rsi_not_overbought = rsi_value is not None and rsi_value < 70
+
+        _, _, histogram = calculate_macd(close)
+        macd_hist_value = float(histogram.iloc[-1]) if pd.notna(histogram.iloc[-1]) else None
+        macd_bullish = macd_hist_value is not None and macd_hist_value > 0
+
+        volume_ok = None
+        if 'Volume' in df.columns:
+            volume = df['Volume'].dropna()
+            if len(volume) >= 20:
+                avg_volume_20 = float(volume.iloc[-20:].mean())
+                current_volume = float(volume.iloc[-1])
+                if avg_volume_20 > 0:
+                    volume_ok = current_volume > avg_volume_20
+
+        conditions = [
+            {"key": "trend", "name": "เทรนด์ขาขึ้น (EMA10 > EMA20)", "met": trend_bullish},
+            {"key": "trend_strength", "name": "เทรนด์แข็งแกร่งพอ (ADX ≥ 20)", "met": trend_strong},
+            {"key": "rsi", "name": "RSI ยังไม่ overbought (< 70)", "met": rsi_not_overbought},
+            {"key": "macd", "name": "โมเมนตัม MACD เป็นบวก", "met": macd_bullish},
+        ]
+        if volume_ok is not None:
+            conditions.append({"key": "volume", "name": "ปริมาณซื้อขายสูงกว่าค่าเฉลี่ย 20 แท่ง", "met": volume_ok})
+
+        met_count = sum(1 for c in conditions if c["met"])
+        total_count = len(conditions)
+
+        if met_count == total_count:
+            entry_recommendation = "เข้าซื้อได้ - สัญญาณแข็งแกร่งครบทุกเงื่อนไข"
+            entry_strength = "strong"
+        elif met_count >= total_count - 1:
+            entry_recommendation = "พอเข้าซื้อได้ - สัญญาณส่วนใหญ่สนับสนุน"
+            entry_strength = "moderate"
+        elif met_count >= total_count / 2:
+            entry_recommendation = "ยังไม่ชัดเจน - สัญญาณผสมกัน ควรรอดูก่อน"
+            entry_strength = "weak"
+        else:
+            entry_recommendation = "ยังไม่ควรเข้า - สัญญาณส่วนใหญ่ไม่สนับสนุน"
+            entry_strength = "none"
+
+        # จุด stop-loss / take-profit อิงจาก ATR (ความผันผวนจริงของหุ้นตัวนี้)
+        # ใช้ 2×ATR เป็นระยะตัดขาดทุน, 3×ATR เป็นเป้าทำกำไร (risk:reward ~1:1.5 เป็นอย่างต่ำ)
+        # ให้รู้จุดออกล่วงหน้าชัดเจนตั้งแต่ก่อนเข้า ไม่ต้องรอสัญญาณ lag แบบ EMA crossover เพียงอย่างเดียว
+        stop_loss = None
+        take_profit = None
+        risk_reward_ratio = None
+        if atr_value is not None and atr_value > 0:
+            stop_loss = round(current_price - 2 * atr_value, 2)
+            take_profit = round(current_price + 3 * atr_value, 2)
+            risk = current_price - stop_loss
+            reward = take_profit - current_price
+            if risk > 0:
+                risk_reward_ratio = round(reward / risk, 2)
+
+        result = {
+            "ticker": ticker_upper,
+            "timeframe": tf,
+            "current_price": round(current_price, 2),
+            "entry_recommendation": entry_recommendation,
+            "entry_strength": entry_strength,
+            "conditions_met": met_count,
+            "conditions_total": total_count,
+            "conditions": conditions,
+            "adx": round(adx_value, 2) if adx_value is not None else None,
+            "rsi": round(rsi_value, 2) if rsi_value is not None else None,
+            "atr": round(atr_value, 2) if atr_value is not None else None,
+            "suggested_stop_loss": stop_loss,
+            "suggested_take_profit": take_profit,
+            "risk_reward_ratio": risk_reward_ratio,
+            "is_stale": False
+        }
+
+        cache_set(cache_key, result, STOCK_CACHE_TTL)
+        return result
+
+    except Exception as e:
+        stale = cache_get(cache_key, allow_stale=True)
+        if stale is not None and not stale.get("error"):
+            stale_copy = dict(stale)
+            stale_copy["is_stale"] = True
+            stale_copy["stale_age_seconds"] = round(cache_age_seconds(cache_key) or 0)
+            return stale_copy
+        return {"error": str(e)}
 
 
 # ========= Backtest: จำลองสัญญาณ BUY/HOLD เดิม (EMA10 ตัด EMA20) กับข้อมูลราคาย้อนหลัง =========
