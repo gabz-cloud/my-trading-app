@@ -1278,6 +1278,22 @@
         }
         .btn-table-unstar:hover { opacity: 1; color: var(--accent-gold); transform: scale(1.2); }
 
+        /* ===== แท็บ TradingView (ตารางฝังจาก TradingView) ===== */
+        .tv-screener-section { margin-top: 4px; }
+        .tv-screener-hint {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+        .tradingview-widget-container {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            min-height: 640px;
+        }
+        .tradingview-widget-container iframe { border-radius: 12px; }
+
         /* ===== แท็บเนวิเกชันสำหรับมือถือ (ค่าเริ่มต้น = ไม่มีผลอะไรบนจอใหญ่) ===== */
         .mobile-view { display: block; }
         .mobile-tab-bar {
@@ -1807,6 +1823,7 @@
                 <div id="tab-buy" class="tab-item active" role="tab" tabindex="0" aria-selected="true" onclick="switchTab('buy')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('buy');}">🔥 BUY (เทคนิคคอล)</div>
                 <div id="tab-hold" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('hold')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('hold');}">💎 HOLD (ออมยาว)</div>
                 <div id="tab-fav" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('fav')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('fav');}">⭐ ชื่นชอบ</div>
+                <div id="tab-tv" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('tv')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('tv');}">📊 TradingView</div>
             </div>
 
             <div class="table-toolbar">
@@ -1845,6 +1862,15 @@
             </div>
 
             <div id="mobileStockList" class="mobile-stock-list"></div>
+
+            <!-- ===== แท็บ TradingView: ตาราง Stock Screener ฝังจาก TradingView โดยตรง ===== -->
+            <div id="tvScreenerSection" class="tv-screener-section" style="display:none;">
+                <div class="tv-screener-hint">
+                    ตารางนี้ดึงข้อมูลสดจาก TradingView โดยตรง — กดหัวคอลัมน์เพื่อเรียงลำดับ
+                    และเปลี่ยนชุดข้อมูล (Overview / Performance / Valuation ฯลฯ) ได้จากแถบเครื่องมือด้านบนของตารางเลยครับ
+                </div>
+                <div id="tvWidgetContainer" class="tradingview-widget-container"></div>
+            </div>
         </section>
 
         <section id="compareSection" class="card" style="display:none;">
@@ -3621,6 +3647,8 @@
             root.setAttribute('data-theme', newTheme);
             document.getElementById('themeBtn').innerText = newTheme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode';
             if (currentTicker) fetchDataAndRender();
+            // ถ้าเคยเปิดแท็บ TradingView ไว้ ให้สร้าง widget ใหม่ด้วยสีธีมที่ตรงกัน
+            if (tvWidgetLoadedTheme !== null) loadTradingViewScreener(true);
         }
 
         function getLocalLogoUrl(ticker) {
@@ -3966,7 +3994,61 @@
             const activeTab = document.getElementById(`tab-${tabName}`);
             activeTab.classList.add('active');
             activeTab.setAttribute('aria-selected', 'true');
+
+            // สลับระหว่างตารางของเราเอง กับตาราง TradingView ที่ฝังมา
+            const isTv = tabName === 'tv';
+            const toolbar = document.querySelector('.table-toolbar');
+            const tableWrap = document.querySelector('#mainStockTable')?.closest('.table-scroll-container');
+            const mobileList = document.getElementById('mobileStockList');
+            const tvSection = document.getElementById('tvScreenerSection');
+
+            if (toolbar) toolbar.style.display = isTv ? 'none' : '';
+            if (tableWrap) tableWrap.style.display = isTv ? 'none' : '';
+            if (mobileList) mobileList.style.display = isTv ? 'none' : '';
+            if (tvSection) tvSection.style.display = isTv ? 'block' : 'none';
+
+            if (isTv) {
+                loadTradingViewScreener();
+                return; // ไม่ต้อง renderTable เพราะ TradingView จัดการตารางของมันเอง
+            }
             renderTable();
+        }
+
+        // ========= TradingView Screener Widget (embed อย่างเป็นทางการจาก TradingView) =========
+        // สร้าง widget ใหม่ทุกครั้งที่ธีมเปลี่ยน เพราะ widget ไม่รองรับการเปลี่ยนสีสดๆ
+        let tvWidgetLoadedTheme = null;
+
+        function loadTradingViewScreener(forceReload = false) {
+            const container = document.getElementById('tvWidgetContainer');
+            if (!container) return;
+
+            const theme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+
+            // ถ้าโหลดไว้แล้วด้วยธีมเดิม ไม่ต้องโหลดซ้ำ (กันกระพริบ)
+            if (!forceReload && tvWidgetLoadedTheme === theme && container.childElementCount > 0) return;
+
+            container.innerHTML = '';
+            const widgetDiv = document.createElement('div');
+            widgetDiv.className = 'tradingview-widget-container__widget';
+            container.appendChild(widgetDiv);
+
+            const script = document.createElement('script');
+            script.type = 'text/javascript';
+            script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-screener.js';
+            script.async = true;
+            script.innerHTML = JSON.stringify({
+                width: '100%',
+                height: 640,
+                defaultColumn: 'overview',
+                defaultScreen: 'most_capitalized',
+                market: 'america',
+                showToolbar: true,
+                colorTheme: theme,
+                isTransparent: false,
+                locale: 'th_TH'
+            });
+            container.appendChild(script);
+            tvWidgetLoadedTheme = theme;
         }
 
         function renderTable() {
