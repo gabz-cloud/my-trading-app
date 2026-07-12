@@ -1237,7 +1237,11 @@
             gap: 4px;
             border-bottom: 1px solid var(--border-color);
             margin-bottom: 18px;
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            scrollbar-width: none;
         }
+        .market-tabs::-webkit-scrollbar { display: none; }
         .tab-item {
             padding: 12px 20px;
             font-family: 'Space Grotesk', sans-serif;
@@ -1250,6 +1254,8 @@
             border-bottom: 3px solid transparent;
             border-radius: 8px 8px 0 0;
             margin-bottom: -1px;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         .tab-item:hover { color: var(--text-color); background: var(--input-bg); }
         .tab-item.active {
@@ -1391,7 +1397,7 @@
             background: var(--container-bg);
             border-top: 1px solid var(--border-color);
             justify-content: center;
-            gap: 48px;
+            gap: 32px;
             padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
         }
         .mobile-tab-btn {
@@ -1746,21 +1752,6 @@
                 </div>
             </div>
 
-            <div class="paper-bot-section">
-                <div class="news-section-header" role="button" tabindex="0" id="paperBotSectionHeader"
-                    aria-expanded="false" aria-controls="paperBotWrap" aria-label="ย่อ/ขยาย Paper Trading Bot"
-                    onclick="togglePaperBotSection()"
-                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePaperBotSection();}">
-                    <span class="news-section-title">🤖 Paper Trading Bot (จำลองเทรดด้วยเงินปลอม)</span>
-                    <span id="paperBotToggleIcon" class="news-toggle-icon">▼</span>
-                </div>
-                <div id="paperBotWrap" class="collapsible-wrap collapsed">
-                    <div id="paperBotContent">
-                        <div class="news-empty">กำลังโหลดสถานะบอท...</div>
-                    </div>
-                </div>
-            </div>
-
             <div class="entry-exit-section">
                 <div class="news-section-header" role="button" tabindex="0" id="entryExitSectionHeader"
                     aria-expanded="false" aria-controls="entryExitWrap" aria-label="ย่อ/ขยายจุดเข้า-ออก"
@@ -1933,44 +1924,55 @@
                 <div id="tab-buy" class="tab-item active" role="tab" tabindex="0" aria-selected="true" onclick="switchTab('buy')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('buy');}">🔥 BUY (เทคนิคคอล)</div>
                 <div id="tab-hold" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('hold')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('hold');}">💎 HOLD (ออมยาว)</div>
                 <div id="tab-fav" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('fav')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('fav');}">⭐ ชื่นชอบ</div>
+                <div id="tab-bot" class="tab-item" role="tab" tabindex="0" aria-selected="false" onclick="switchTab('bot')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('bot');}">🤖 บอท</div>
             </div>
 
-            <div class="table-toolbar">
-                <div class="input-wrap toolbar-search">
-                    <span class="input-icon">🔍</span>
-                    <input type="text" id="filterTicker" placeholder="กรองตามชื่อหุ้น..." oninput="onFilterChange()">
+            <div id="screenerTableArea">
+                <div class="table-toolbar">
+                    <div class="input-wrap toolbar-search">
+                        <span class="input-icon">🔍</span>
+                        <input type="text" id="filterTicker" placeholder="กรองตามชื่อหุ้น..." oninput="onFilterChange()">
+                    </div>
+                    <div class="price-input-wrap">
+                        <input type="number" id="filterMinPrice" class="toolbar-num" placeholder="ราคาต่ำสุด ($)" oninput="onFilterChange()">
+                        <button type="button" class="clear-input-btn" onclick="clearSingleFilter('filterMinPrice')" aria-label="ล้างราคาต่ำสุด">✕</button>
+                    </div>
+                    <div class="price-input-wrap">
+                        <input type="number" id="filterMaxPrice" class="toolbar-num" placeholder="ราคาสูงสุด ($)" oninput="onFilterChange()">
+                        <button type="button" class="clear-input-btn" onclick="clearSingleFilter('filterMaxPrice')" aria-label="ล้างราคาสูงสุด">✕</button>
+                    </div>
+                    <button class="btn-export-csv" onclick="exportTableCsv()">📥 Export CSV</button>
                 </div>
-                <div class="price-input-wrap">
-                    <input type="number" id="filterMinPrice" class="toolbar-num" placeholder="ราคาต่ำสุด ($)" oninput="onFilterChange()">
-                    <button type="button" class="clear-input-btn" onclick="clearSingleFilter('filterMinPrice')" aria-label="ล้างราคาต่ำสุด">✕</button>
+
+                <div class="table-scroll-container">
+                    <table id="mainStockTable">
+                        <thead>
+                            <tr>
+                                <th class="col-compare">⚖️</th>
+                                <th class="col-star">⭐</th>
+                                <th class="col-no">อันดับ</th>
+                                <th>โลโก้</th>
+                                <th class="sortable" id="th-ticker" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('ticker')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('ticker');}">ชื่อหุ้น <span id="sort-icon-ticker" class="sort-icon"></span></th>
+                                <th class="sortable" id="th-price" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('price')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('price');}">ราคาปัจจุบัน <span id="sort-icon-price" class="sort-icon"></span></th>
+                                <th class="sortable" id="th-support" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('support')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('support');}">แนวรับล่าสุด <span id="sort-icon-support" class="sort-icon"></span></th>
+                                <th>สัญญาณ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableRows">
+                        </tbody>
+                    </table>
                 </div>
-                <div class="price-input-wrap">
-                    <input type="number" id="filterMaxPrice" class="toolbar-num" placeholder="ราคาสูงสุด ($)" oninput="onFilterChange()">
-                    <button type="button" class="clear-input-btn" onclick="clearSingleFilter('filterMaxPrice')" aria-label="ล้างราคาสูงสุด">✕</button>
-                </div>
-                <button class="btn-export-csv" onclick="exportTableCsv()">📥 Export CSV</button>
+
+                <div id="mobileStockList" class="mobile-stock-list"></div>
             </div>
 
-            <div class="table-scroll-container">
-                <table id="mainStockTable">
-                    <thead>
-                        <tr>
-                            <th class="col-compare">⚖️</th>
-                            <th class="col-star">⭐</th>
-                            <th class="col-no">อันดับ</th>
-                            <th>โลโก้</th>
-                            <th class="sortable" id="th-ticker" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('ticker')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('ticker');}">ชื่อหุ้น <span id="sort-icon-ticker" class="sort-icon"></span></th>
-                            <th class="sortable" id="th-price" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('price')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('price');}">ราคาปัจจุบัน <span id="sort-icon-price" class="sort-icon"></span></th>
-                            <th class="sortable" id="th-support" role="button" tabindex="0" aria-sort="none" onclick="toggleSort('support')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSort('support');}">แนวรับล่าสุด <span id="sort-icon-support" class="sort-icon"></span></th>
-                            <th>สัญญาณ</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tableRows">
-                    </tbody>
-                </table>
+            <div id="botTabView" style="display:none;">
+                <button class="btn-back" onclick="goBackFromBot()">← กลับ</button>
+                <div class="control-section-label" style="margin-top:14px;">🤖 Paper Trading Bot (จำลองเทรดด้วยเงินปลอม)</div>
+                <div id="paperBotContent">
+                    <div class="news-empty">กำลังโหลดสถานะบอท...</div>
+                </div>
             </div>
-
-            <div id="mobileStockList" class="mobile-stock-list"></div>
         </section>
 
         <section id="compareSection" class="card" style="display:none;">
@@ -2013,6 +2015,9 @@
         </button>
         <button type="button" id="tabBtnScreener" class="mobile-tab-btn" onclick="switchMobileView('screener')">
             <span class="tab-icon">📈</span><span>หุ้น</span>
+        </button>
+        <button type="button" id="tabBtnBot" class="mobile-tab-btn" onclick="openBotTab()">
+            <span class="tab-icon">🤖</span><span>บอท</span>
         </button>
     </nav>
 
@@ -2719,17 +2724,6 @@
             take_profit: 'ถึง Take Profit',
             trend_reversal: 'เทรนด์กลับตัว'
         };
-
-        function togglePaperBotSection() {
-            const wrap = document.getElementById('paperBotWrap');
-            const icon = document.getElementById('paperBotToggleIcon');
-            const header = document.getElementById('paperBotSectionHeader');
-            const nowCollapsed = !wrap.classList.contains('collapsed');
-            wrap.classList.toggle('collapsed', nowCollapsed);
-            icon.innerText = nowCollapsed ? '▼' : '▲';
-            header.setAttribute('aria-expanded', String(!nowCollapsed));
-            if (!nowCollapsed) loadPaperBotStatus();
-        }
 
         async function loadPaperBotStatus() {
             const container = document.getElementById('paperBotContent');
@@ -3954,6 +3948,11 @@
             const activeBtn = document.getElementById(MOBILE_TAB_BTN_IDS[view]);
             if (activeBtn) activeBtn.classList.add('active');
 
+            // ปุ่ม "บอท" ไม่ได้อยู่ใน MOBILE_TAB_BTN_IDS (ไม่ใช่ mobileView จริงๆ แต่เป็นแค่แท็บย่อยในหน้าสแกน)
+            // ต้องเคลียร์ active ของมันเองทุกครั้งที่สลับไปหน้าอื่น กันค้างเป็น active ซ้อนกันสองปุ่ม
+            const botBtn = document.getElementById('tabBtnBot');
+            if (botBtn) botBtn.classList.remove('active');
+
             if (!skipScroll) {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }
@@ -4333,9 +4332,43 @@
                 tab.setAttribute('aria-selected', 'false');
             });
             const activeTab = document.getElementById(`tab-${tabName}`);
-            activeTab.classList.add('active');
-            activeTab.setAttribute('aria-selected', 'true');
-            renderTable();
+            if (activeTab) {
+                activeTab.classList.add('active');
+                activeTab.setAttribute('aria-selected', 'true');
+            }
+
+            const tableArea = document.getElementById('screenerTableArea');
+            const botView = document.getElementById('botTabView');
+
+            if (tabName === 'bot') {
+                tableArea.style.display = 'none';
+                botView.style.display = 'block';
+                loadPaperBotStatus();
+            } else {
+                tableArea.style.display = '';
+                botView.style.display = 'none';
+                renderTable();
+            }
+        }
+
+        // ปุ่ม "← กลับ" ในหน้าบอท — กลับไปหน้าตารางสแกน (แท็บ BUY เป็นค่าเริ่มต้น)
+        function goBackFromBot() {
+            switchTab('buy');
+            switchMobileView('screener', true);
+        }
+
+        // ปุ่ม "🤖 บอท" ที่แถบด้านล่างของมือถือ — สลับไปหน้าสแกนก่อน (เผื่อยังอยู่หน้าภาพรวม/รายละเอียดหุ้น) แล้วค่อยเปิดแท็บบอท
+        function openBotTab() {
+            switchMobileView('screener', true);
+            switchTab('bot');
+            // switchMobileView ปกติจะทำให้ปุ่ม "หุ้น" active แทน เลยต้องแก้ให้ปุ่ม "บอท" active ถูกต้องแทน
+            document.querySelectorAll('.mobile-tab-btn').forEach(btn => btn.classList.remove('active'));
+            const botBtn = document.getElementById('tabBtnBot');
+            if (botBtn) botBtn.classList.add('active');
+            const screenerSection = document.getElementById('screenerWrapper');
+            if (screenerSection) {
+                screenerSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
 
         function renderTable() {
